@@ -1,0 +1,16 @@
+ipython>=8.10
+jupyterlab>=3.0
+notebook
+kedro==1.1.1
+kedro-datasets[pandas]==3.0.0
+kedro-telemetry==0.6.0
+seaborn
+matplotlib
+kedro-datasets
+toml
+numpy<2.0
+pandas<2.2.0
+pyarrow==14.0.2
+jupyter
+ipykernel
+scikit-learn>=1.0.0

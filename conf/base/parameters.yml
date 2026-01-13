@@ -1,0 +1,11 @@
+# conf/base/parameters.yml
+
+data_preparation:
+  min_year: 2000
+  drop_columns_races: ["url"]
+  target_classification: "is_podium"
+  target_regression: "positionOrder"
+
+modeling:
+  test_size: 0.2
+  random_state: 42

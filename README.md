@@ -118,7 +118,6 @@ Una vez activado, puedes instalar las dependencias como se indica más abajo.
 ## ▶️ Cómo ejecutar tu pipeline de Kedro
 
 Puedes ejecutar tu proyecto Kedro con:
-
 ```
 kedro run
 ```
