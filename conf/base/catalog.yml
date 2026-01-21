@@ -48,22 +48,120 @@ f1_features:
   type: MemoryDataset
 
 # ======================================================
-# PRIMARY / MODEL INPUT DATASETS
+# PRIMARY DATASETS (disk)
 # ======================================================
 
 clean_f1_data:
   type: pandas.CSVDataset
   filepath: data/03_primary/clean_f1_data.csv
+  load_args:
+    encoding: "utf-8-sig"
   save_args:
     index: false
     encoding: "utf-8-sig"
 
 # ======================================================
-# OPTIONAL: MODEL METRICS (in-memory)
+# MODEL INPUT DATASETS (disk) - Evaluación 2
+# ======================================================
+
+model_input_classification:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/model_input_classification.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
+model_input_regression:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/model_input_regression.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
+# ======================================================
+# REPORTING / METRICS (disk) - Evaluación 2
+# ======================================================
+
+classification_metrics_table:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/classification_metrics_table.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
+regression_metrics_table:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/regression_metrics_table.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
+# ======================================================
+# OPTIONAL: Keep old in-memory metrics to avoid breaking old pipeline code
 # ======================================================
 
 classification_metrics:
   type: MemoryDataset
 
 regression_metrics:
+  type: MemoryDataset
+
+# ======================================================
+# MODELS (disk) - Evaluación 2
+# ======================================================
+
+best_model_classification:
+  type: pickle.PickleDataset
+  filepath: data/06_models/best_model_classification.pkl
+
+best_model_regression:
+  type: pickle.PickleDataset
+  filepath: data/06_models/best_model_regression.pkl
+
+# ======================================================
+# REPORTING / SUMMARIES (disk) - Evaluación 2
+# ======================================================
+
+classification_metrics_summary:
+  type: json.JSONDataset
+  filepath: data/08_reporting/classification_metrics_summary.json
+
+regression_metrics_summary:
+  type: json.JSONDataset
+  filepath: data/08_reporting/regression_metrics_summary.json
+
+# ======================================================
+# REPORTING / PLOTS (disk) - Evaluación 2
+# ======================================================
+
+classification_metrics_plot:
+  type: matplotlib.MatplotlibWriter
+  filepath: data/08_reporting/classification_metrics.png
+
+regression_metrics_plot:
+  type: matplotlib.MatplotlibWriter
+  filepath: data/08_reporting/regression_metrics.png
+
+# ======================================================
+# OPTIONAL (in-memory bridge)
+# ======================================================
+
+best_model_classification_mem:
+  type: MemoryDataset
+
+best_model_regression_mem:
+  type: MemoryDataset
+
+classification_metrics_summary_mem:
+  type: MemoryDataset
+
+regression_metrics_summary_mem:
   type: MemoryDataset

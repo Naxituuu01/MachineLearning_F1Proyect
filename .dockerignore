@@ -1,0 +1,24 @@
+# Python / venv
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Git
+.git/
+.gitignore
+
+# Kedro / outputs
+data/
+logs/
+mlruns/
+dvc.lock
+.dvc/cache/
+
+# Docker artifacts
+**/*.log
+
+# OS / editor
+.vscode/
+.DS_Store

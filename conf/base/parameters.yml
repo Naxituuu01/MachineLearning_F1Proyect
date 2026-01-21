@@ -1,11 +1,33 @@
-# conf/base/parameters.yml
+# ======================================================
+# PARAMETERS (Evaluación 2)
+# ======================================================
 
 data_preparation:
   min_year: 2000
   drop_columns_races: ["url"]
-  target_classification: "is_podium"
-  target_regression: "positionOrder"
+
+targets:
+  classification:
+    name: "points_positive"   # 1 si points > 0, 0 si points == 0
+    rule: "points>0"
+
+  regression:
+    name: "milliseconds_finished"
+    status_finished_id: 1     # usar solo statusId == 1 (Finished)
+    target_column: "milliseconds"
 
 modeling:
   test_size: 0.2
   random_state: 42
+  cv_folds: 5
+
+  # Clasificación
+  use_smote: true
+  smote_k_neighbors: 5
+
+  # Regresión (recomendado para evitar métricas irreales por mezcla temporal)
+  use_time_split: true
+  time_split_year_cutoff: 2018
+  order_by: "cv_f1_macro_mean"     # o "cv_accuracy_mean" si el 87% es accuracy
+  use_log_target: true
+  grid_verbose: 0                  # 0 silencioso, 1+ más logs

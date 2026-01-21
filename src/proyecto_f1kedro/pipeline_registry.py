@@ -9,6 +9,15 @@ from proyecto_f1kedro.pipelines.data_engineering import (
 from proyecto_f1kedro.pipelines.data_science import (
     create_pipeline as ds_pipeline,
 )
+from proyecto_f1kedro.pipelines import model_input as model_input_pipeline
+
+from proyecto_f1kedro.pipelines.classification import (
+    create_pipeline as cls_pipeline,
+)
+from proyecto_f1kedro.pipelines.regression import (
+    create_pipeline as reg_pipeline,
+)
+
 
 
 def register_pipelines() -> dict[str, Pipeline]:
@@ -18,26 +27,37 @@ def register_pipelines() -> dict[str, Pipeline]:
     La estructura sigue la metodología CRISP-DM:
     - data_understanding: exploración y comprensión de los datos
     - data_engineering: limpieza, integración y feature engineering
-    - data_science: entrenamiento y evaluación de modelos baseline
+    - model_input: construcción de datasets finales para ML (clasificación y regresión)
+    - data_science: entrenamiento y evaluación de modelos (baseline actual)
     """
 
     data_understanding = du_pipeline()
     data_engineering = de_pipeline()
+    model_input = model_input_pipeline.create_pipeline()
     data_science = ds_pipeline()
+    classification = cls_pipeline()
+    regression = reg_pipeline()
 
-    data_preparation = data_engineering + data_science
+
+
+    # Si quieres mantener "data_preparation" como un "shortcut" útil:
+    data_preparation = data_engineering + model_input + data_science
 
     return {
-        # Pipelines por fase
         "data_understanding": data_understanding,
         "data_engineering": data_engineering,
+        "model_input": model_input,
         "data_science": data_science,
         "data_preparation": data_preparation,
+        "classification": classification,
+        "regression": regression,
 
-        # Pipeline completo
+
+
         "__default__": (
             data_understanding
             + data_engineering
+            + model_input
             + data_science
         ),
     }

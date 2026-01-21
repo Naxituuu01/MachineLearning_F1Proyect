@@ -1,0 +1,12 @@
+-r requirements.txt
+
+# Notebook / dev tools
+jupyterlab==4.1.8
+notebook==7.1.3
+ipykernel==6.29.5
+
+# Viz adicional (si lo quieres en dev)
+seaborn==0.13.2
+
+# Kedro Viz (solo en dev)
+kedro-viz==12.2.0
