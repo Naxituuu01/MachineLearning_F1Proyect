@@ -7,7 +7,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=train_and_evaluate_classification,
                 inputs=dict(
-                    model_input_classification="model_input_classification",
+                    model_input_classification="model_input_classification_with_clusters",
                     modeling="params:modeling",
                 ),
                 outputs=[

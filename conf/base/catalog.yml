@@ -2,6 +2,27 @@
 # RAW DATASETS (data/01_raw)
 # ======================================================
 
+qualifying_raw:
+  type: pandas.CSVDataset
+  filepath: data/01_raw/qualifying.csv
+  load_args:
+    encoding: "latin-1"
+    na_values: ["\\N"]
+
+driver_standings_raw:
+  type: pandas.CSVDataset
+  filepath: data/01_raw/driver_standings.csv
+  load_args:
+    encoding: "latin-1"
+    na_values: ["\\N"]
+
+constructor_standings_raw:
+  type: pandas.CSVDataset
+  filepath: data/01_raw/constructor_standings.csv
+  load_args:
+    encoding: "latin-1"
+    na_values: ["\\N"]
+
 races_raw:
   type: pandas.CSVDataset
   filepath: data/01_raw/races.csv
@@ -82,6 +103,15 @@ model_input_regression:
     index: false
     encoding: "utf-8-sig"
 
+model_input_classification_with_clusters:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/model_input_classification_with_clusters.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
 # ======================================================
 # REPORTING / METRICS (disk) - Evaluación 2
 # ======================================================
@@ -98,6 +128,28 @@ classification_metrics_table:
 regression_metrics_table:
   type: pandas.CSVDataset
   filepath: data/08_reporting/regression_metrics_table.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
+# ======================================================
+# REPORTING / PREDICTIONS + FEATURE IMPORTANCES (disk)
+# ======================================================
+
+regression_predictions_test:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/regression_predictions_test.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
+regression_feature_importances:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/regression_feature_importances.csv
   load_args:
     encoding: "utf-8-sig"
   save_args:
@@ -131,11 +183,11 @@ best_model_regression:
 # ======================================================
 
 classification_metrics_summary:
-  type: json.JSONDataset
+  type: kedro_datasets.json.JSONDataset
   filepath: data/08_reporting/classification_metrics_summary.json
 
 regression_metrics_summary:
-  type: json.JSONDataset
+  type: kedro_datasets.json.JSONDataset
   filepath: data/08_reporting/regression_metrics_summary.json
 
 # ======================================================
@@ -165,3 +217,64 @@ classification_metrics_summary_mem:
 
 regression_metrics_summary_mem:
   type: MemoryDataset
+
+# ======================================================
+# OPTIONAL: Datasets for clustering pipeline - Evaluación 3
+# ======================================================
+
+clustering_race_features:
+  type: pandas.CSVDataset
+  filepath: data/04_feature/clustering_race_features.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
+clustering_labels_race:
+  type: pandas.CSVDataset
+  filepath: data/04_feature/clustering_labels_race.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
+clustering_metrics:
+  type: kedro_datasets.json.JSONDataset
+  filepath: data/08_reporting/clustering_metrics.json
+
+clustering_plot_elbow:
+  type: matplotlib.MatplotlibWriter
+  filepath: data/08_reporting/clustering_elbow.png
+
+clustering_plot_silhouette:
+  type: matplotlib.MatplotlibWriter
+  filepath: data/08_reporting/clustering_silhouette.png
+
+clustering_plot_pca2d:
+  type: matplotlib.MatplotlibWriter
+  filepath: data/08_reporting/clustering_pca2d.png
+
+clustering_bundle:
+  type: pickle.PickleDataset
+  filepath: data/06_models/clustering_bundle.pkl
+
+model_input_regression_with_clusters:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/model_input_regression_with_clusters.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"
+
+# (Opcional pero recomendado para informe)
+clustering_cluster_profile:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/clustering_cluster_profile.csv
+  load_args:
+    encoding: "utf-8-sig"
+  save_args:
+    index: false
+    encoding: "utf-8-sig"

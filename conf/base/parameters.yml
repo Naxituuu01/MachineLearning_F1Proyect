@@ -1,33 +1,125 @@
 # ======================================================
-# PARAMETERS (Evaluación 2)
+# PARAMETERS - PROYECTO F1 KEDRO (Evaluación 2)
+# Mantener CLASIFICACIÓN intacta + optimizar REGRESIÓN
 # ======================================================
+
+# ------------------------------------------------------
+# 0) PARAMS requeridos por pipeline model_input
+# (esto corrige tu error actual)
+# ------------------------------------------------------
+
+clustering:
+  entity: "race"               # para documentación
+  group_key: "raceId"
+
+  method: "kmeans"
+  k_final: 4                   # ✅ lo que elegiste
+
+  # Si quieres seguir guardando elbow/silhouette:
+  do_search: true
+  k_min: 2
+  k_max: 12
+
+  # Preproceso
+  scale_numeric: true
+  pca_variance: 0.90
+  pca_random_state: 42
+
+  # KMeans
+  kmeans_random_state: 42
+  kmeans_n_init: 20
+  kmeans_max_iter: 300
+
+
+
 
 data_preparation:
   min_year: 2000
-  drop_columns_races: ["url"]
 
 targets:
   classification:
-    name: "points_positive"   # 1 si points > 0, 0 si points == 0
+    # Tu cls actual: points > 0 (binaria)
+    name: "points_positive"
     rule: "points>0"
 
   regression:
+    # Tu reg actual: solo finishers (statusId==1) y target en milliseconds
     name: "milliseconds_finished"
-    status_finished_id: 1     # usar solo statusId == 1 (Finished)
+    status_finished_id: 1
     target_column: "milliseconds"
+    pace_denominator: "laps_expected"   # opciones: laps_expected | laps_actual
 
+
+# ------------------------------------------------------
+# 1) Feature engineering global (opcional)
+# (si no lo usas explícitamente, puedes borrarlo)
+# ------------------------------------------------------
+features:
+  rolling_windows: [5, 10, 30]
+  cutoff_year_train: 2018
+
+# ------------------------------------------------------
+# 2) MODELING (BLOQUE PRINCIPAL)
+# IMPORTANTE:
+# - Mantén aquí lo que clasificación espera (para no romperla).
+# - Regresión también lee params:modeling según tu regression/nodes.py
+# ------------------------------------------------------
 modeling:
+  # ====== Común / clasificación ======
   test_size: 0.2
   random_state: 42
   cv_folds: 5
+  grid_verbose: 0
 
-  # Clasificación
   use_smote: true
   smote_k_neighbors: 5
 
-  # Regresión (recomendado para evitar métricas irreales por mezcla temporal)
+  # (opcional) criterio para ordenar tabla
+  order_by: "cv_f1_macro_mean"
+  ohe_min_frequency: 10
+
+  # ====== Regresión ======
   use_time_split: true
   time_split_year_cutoff: 2018
-  order_by: "cv_f1_macro_mean"     # o "cv_accuracy_mean" si el 87% es accuracy
-  use_log_target: true
-  grid_verbose: 0                  # 0 silencioso, 1+ más logs
+  use_log_target: false
+  reg_target_mode: "pace"   # opciones: pace | residual
+  reg_fast_mode: true
+
+  reg_pick_recent: true
+  reg_train_last_n_races: null
+  reg_max_rows_total: null
+
+  fi_top_k: 30
+  reg_train_sample_frac: 0.85
+  reg_train_sample_n_races: null
+  reg_train_sample_seed: 42
+  reg_train_sample_recent_pool_frac: 1.0
+
+  # ----------------------------
+  # Segmentación SOLO TRAIN - CLASIFICACIÓN (✅ AQUÍ)
+  # ----------------------------
+  cls_pick_recent: true
+  cls_train_sample_frac: null
+  cls_train_sample_n_races: null
+  cls_train_sample_seed: 42
+  cls_train_sample_recent_pool_frac: 1.0
+
+# ------------------------------------------------------
+# 3) BLOQUE EXTRA (NO USAR salvo que tu pipeline cls lo consuma)
+# Puedes dejarlo, pero NO garantiza nada.
+# ------------------------------------------------------
+modeling_classification:
+  test_size: 0.2
+  random_state: 42
+  cv_folds: 5
+  grid_verbose: 0
+  selection_metric: "f1_macro"
+  use_smote: true
+  smote_k_neighbors: 5
+
+# ------------------------------------------------------
+# 4) REPORTING / PLOTTING (si aplica)
+# ------------------------------------------------------
+reporting:
+  save_plots: true
+  dpi: 150

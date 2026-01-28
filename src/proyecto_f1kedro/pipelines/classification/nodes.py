@@ -96,10 +96,12 @@ def _build_preprocessor(df: pd.DataFrame, ohe_min_frequency: int) -> ColumnTrans
     - StandardScaler para numéricas
 
     Nota:
-    - num_cols incluye base + features históricas/rolling (si existen).
-    - Se filtran automáticamente según columnas presentes.
+    - Incluye "cluster_kmeans_k*" como categórica si existe (no rompe si no existe).
     """
-    cat_cols = ["driverId", "constructorId", "circuitId"]
+
+    # Si existe cluster del pipeline de clustering, lo tratamos como categórica
+    cluster_cols = [c for c in df.columns if c.startswith("cluster_kmeans_k")]
+    cat_cols = ["driverId", "constructorId", "circuitId"] + cluster_cols
 
     num_cols = [
         # base
@@ -213,6 +215,85 @@ def _get_candidates(random_state: int) -> List[Tuple[str, Any, Dict[str, List[An
 
 
 # ----------------------------
+# Segmentation helper (TRAIN only)
+# ----------------------------
+
+def _sample_train_by_races_random(
+    X: pd.DataFrame,
+    y: pd.Series,
+    frac: float | None,
+    n_races: int | None,
+    seed: int,
+    pick_recent: bool,
+    min_unique_races: int,
+    recent_pool_frac: float = 1.0,
+) -> tuple[pd.DataFrame, pd.Series, dict]:
+    info = {
+        "applied": False,
+        "mode": "random_races",
+        "rows_before": int(len(X)),
+        "rows_after": int(len(X)),
+        "races_before": int(X["raceId"].nunique()) if "raceId" in X.columns else None,
+        "races_after": None,
+        "frac": frac,
+        "n_races": n_races,
+        "seed": int(seed),
+        "pick_recent": bool(pick_recent),
+        "min_unique_races": int(min_unique_races),
+        "recent_pool_frac": float(recent_pool_frac),
+    }
+
+    if ("raceId" not in X.columns) or (not {"year", "round"}.issubset(X.columns)):
+        return X, y, info
+
+    races = (
+        X[["raceId", "year", "round"]]
+        .drop_duplicates()
+        .sort_values(["year", "round", "raceId"])
+        .reset_index(drop=True)
+    )
+    all_race_ids = races["raceId"].tolist()
+    n_total = len(all_race_ids)
+
+    if n_total < min_unique_races:
+        return X, y, info
+
+    pool = all_race_ids
+    if pick_recent:
+        rp = float(np.clip(recent_pool_frac, 0.10, 1.0))
+        k_pool = max(min_unique_races, int(round(rp * n_total)))
+        pool = all_race_ids[-k_pool:]
+
+    rng = np.random.default_rng(int(seed))
+
+    if n_races is not None:
+        k = int(n_races)
+    elif frac is not None:
+        k = int(round(float(frac) * len(pool)))
+    else:
+        return X, y, info
+
+    k = max(min_unique_races, min(k, len(pool)))
+    selected = rng.choice(pool, size=k, replace=False).tolist()
+
+    X2 = X[X["raceId"].isin(selected)].copy()
+    y2 = y.loc[X2.index].copy()
+
+    X2 = X2.sort_values(["year", "round", "raceId"]).copy()
+    y2 = y2.loc[X2.index].copy()
+
+    info.update(
+        {
+            "applied": True,
+            "rows_after": int(len(X2)),
+            "races_after": int(X2["raceId"].nunique()),
+            "selected_races": int(len(selected)),
+        }
+    )
+    return X2, y2, info
+
+
+# ----------------------------
 # Main node
 # ----------------------------
 
@@ -259,8 +340,35 @@ def train_and_evaluate_classification(
         stratify=y,
     )
 
+    # ----------------------------
+    # Segmentación TRAIN ONLY (opcional) - por carreras
+    # ----------------------------
+    seg_info = {"applied": False}
+    min_unique_races = max(25, cfg.cv_folds * 5)
+
+    frac = modeling.get("cls_train_sample_frac", None)
+    n_races = modeling.get("cls_train_sample_n_races", None)
+
+    if (frac is not None) or (n_races is not None):
+        X_train, y_train, seg_info = _sample_train_by_races_random(
+            X=X_train.copy(),
+            y=y_train.copy(),
+            frac=float(frac) if frac is not None else None,
+            n_races=int(n_races) if n_races is not None else None,
+            seed=int(modeling.get("cls_train_sample_seed", cfg.random_state)),
+            pick_recent=bool(modeling.get("cls_pick_recent", True)),
+            min_unique_races=min_unique_races,
+            recent_pool_frac=float(modeling.get("cls_train_sample_recent_pool_frac", 1.0)),
+        )
+
+    # CV (se mantiene estratificado)
     cv = StratifiedKFold(n_splits=cfg.cv_folds, shuffle=True, random_state=cfg.random_state)
-    preprocessor = _build_preprocessor(X_train, ohe_min_frequency=cfg.ohe_min_frequency)
+
+    # Preprocessor: se define con columnas de entrenamiento (sin raceId)
+    Xtr_fit = X_train.drop(columns=["raceId"], errors="ignore")
+    Xte_fit = X_test.drop(columns=["raceId"], errors="ignore")
+
+    preprocessor = _build_preprocessor(Xtr_fit, ohe_min_frequency=cfg.ohe_min_frequency)
     candidates = _get_candidates(cfg.random_state)
 
     # Multi-métrica y refit por f1_macro (criterio principal defendible)
@@ -280,7 +388,6 @@ def train_and_evaluate_classification(
     # Mejor por criterio principal (f1_macro CV)
     best_overall_estimator: Optional[Any] = None
     best_overall_name: Optional[str] = None
-    best_overall_params: Optional[Dict[str, Any]] = None
     best_overall_cv_f1: float = -np.inf
     best_overall_used_smote: bool = False
 
@@ -306,7 +413,7 @@ def train_and_evaluate_classification(
             verbose=cfg.grid_verbose,
         )
 
-        gs.fit(X_train, y_train)
+        gs.fit(Xtr_fit, y_train)
 
         best = gs.best_estimator_
         best_idx = gs.best_index_
@@ -332,7 +439,7 @@ def train_and_evaluate_classification(
         gen_gap_f1 = float(train_f1_mean - cv_f1_mean)
 
         # Test metrics
-        y_pred = best.predict(X_test)
+        y_pred = best.predict(Xte_fit)
         test_acc = float(accuracy_score(y_test, y_pred))
         test_prec = float(precision_score(y_test, y_pred, average="macro", zero_division=0))
         test_rec = float(recall_score(y_test, y_pred, average="macro", zero_division=0))
@@ -368,7 +475,6 @@ def train_and_evaluate_classification(
             best_overall_cv_f1 = cv_f1_mean
             best_overall_estimator = best
             best_overall_name = name
-            best_overall_params = gs.best_params_
             best_overall_used_smote = use_smote_this
 
     results = pd.DataFrame(rows)
@@ -384,13 +490,13 @@ def train_and_evaluate_classification(
     if best_overall_estimator is None or best_overall_name is None:
         raise RuntimeError("No se pudo seleccionar un mejor modelo. Revisa datos/param grids.")
 
-    best_pred = best_overall_estimator.predict(X_test)
+    best_pred = best_overall_estimator.predict(Xte_fit)  # ✅ FIX: sin raceId
     fig, ax = plt.subplots(figsize=(6, 5))
     ConfusionMatrixDisplay.from_predictions(y_test, best_pred, ax=ax, values_format="d")
     ax.set_title(f"Confusion Matrix (Test) - Best: {best_overall_name} | SMOTE={best_overall_used_smote}")
     fig.tight_layout()
 
-    # Summary (reporta top-1 según orden_by y también el best por f1_cv si difiere)
+    # Summary (top-1 según order_by)
     top = results.iloc[0].to_dict()
 
     summary = {
@@ -399,7 +505,6 @@ def train_and_evaluate_classification(
         "best_params": str(top["best_params"]),
         "cv": {
             "folds": cfg.cv_folds,
-
             "best_accuracy_mean": float(top["cv_accuracy_mean"]),
             "best_accuracy_std": float(top["cv_accuracy_std"]),
             "best_precision_macro_mean": float(top["cv_precision_macro_mean"]),
@@ -423,6 +528,7 @@ def train_and_evaluate_classification(
             "class_balance_train": y_train.value_counts(normalize=True).to_dict(),
             "class_balance_test": y_test.value_counts(normalize=True).to_dict(),
         },
+        "train_segmentation": seg_info,
         "smote": {
             "enabled_global": cfg.use_smote,
             "k_neighbors": cfg.smote_k_neighbors if cfg.use_smote else None,
@@ -433,7 +539,8 @@ def train_and_evaluate_classification(
             "Se usa StratifiedKFold (k>=5) para preservar proporción de clases durante CV.",
             "Se reportan mean±std en CV para accuracy, precision_macro, recall_macro y f1_macro.",
             "Se reporta generalization_gap_f1 = train_f1_macro_mean - cv_f1_macro_mean como señal de overfitting.",
-            "El gráfico de matriz de confusión corresponde al mejor modelo por f1_macro CV (refit_metric), no necesariamente al top-1 por order_by.",
+            "El gráfico de matriz de confusión corresponde al mejor modelo por f1_macro CV (refit_metric).",
+            "raceId se usa solo para segmentación opcional; se elimina antes de entrenar/predict.",
         ],
     }
 
