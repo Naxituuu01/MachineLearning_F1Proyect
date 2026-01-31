@@ -102,7 +102,9 @@ def _add_historical_features_regression(df_reg: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Faltan columnas para históricos (reg): {sorted(missing)}")
 
     df_reg = df_reg.sort_values(["year", "round", "raceId"]).reset_index(drop=True)
+    # Fallback global para imputaciones de pace (target_reg)
     global_mean = float(df_reg["target_reg"].mean())
+
 
     def prev_mean_and_count(group_key: str):
         g = df_reg.groupby(group_key, sort=False)["target_reg"]
@@ -465,22 +467,51 @@ def build_model_inputs_from_raw(
     bins = [1999, 2005, 2010, 2014, 2017, 2021, 2025]
     df_reg["era_bin"] = pd.cut(df_reg["year"], bins=bins, labels=False, include_lowest=True).fillna(0).astype(int)
 
+
     # experiencia driver en circuito (sin leakage)
     df_reg["driver_circuit_prev_count"] = df_reg.groupby(["driverId", "circuitId"], sort=False).cumcount().astype(int)
     df_reg["driver_circuit_log"] = np.log1p(df_reg["driver_circuit_prev_count"])
 
+    global_mean = float(df_reg["target_reg"].mean())
+
     # --------------------
     # Baseline por circuito (sin leakage) + residual
+    # - Mejora: baseline "era-aware" + recency-aware (EWMA)
     # --------------------
-    global_mean = float(df_reg["target_reg"].mean())
-    g_c = df_reg.groupby("circuitId", sort=False)["target_reg"]
 
-    df_reg["circuit_baseline_pace"] = (
-        g_c.apply(lambda s: s.shift().expanding().mean())
+    # 1) baseline por (circuitId, era_bin): expanding mean shifted (sin leakage)
+    g_ce = df_reg.groupby(["circuitId", "era_bin"], sort=False)["target_reg"]
+    baseline_circuit_era = (
+        g_ce.apply(lambda s: s.shift(1).expanding(min_periods=5).mean())
+        .reset_index(level=[0, 1], drop=True)
+    )
+
+    # 2) fallback por circuito: EWMA shifted (más peso a carreras recientes)
+    g_c = df_reg.groupby("circuitId", sort=False)["target_reg"]
+    baseline_circuit_ewm = (
+        g_c.apply(lambda s: s.shift(1).ewm(span=40, adjust=False, min_periods=5).mean())
         .reset_index(level=0, drop=True)
+    )
+
+    # 3) composición + fallbacks
+    df_reg["circuit_baseline_pace"] = (
+        baseline_circuit_era
+        .fillna(baseline_circuit_ewm)
         .fillna(global_mean)
     )
-    df_reg["target_resid"] = (df_reg["target_reg"] - df_reg["circuit_baseline_pace"]).fillna(0.0)
+    
+    # ---------------------------------------------
+    # Targets auxiliares para regresión (sin leakage)
+    # ---------------------------------------------
+    # residual = diferencia vs baseline (ms/lap)
+    df_reg["target_resid"] = (df_reg["target_reg"] - df_reg["circuit_baseline_pace"]).astype(float)
+
+    # relative = error relativo vs baseline (adimensional)
+    # y_rel = (pace - baseline) / baseline
+    # OJO: evita división por cero con clip
+    den = df_reg["circuit_baseline_pace"].astype(float).clip(lower=1e-6)
+    df_reg["target_rel"] = ((df_reg["target_reg"].astype(float) - den) / den).astype(float)
+
 
     # --------------------
     # Tendencia por temporada (drift)
@@ -507,6 +538,23 @@ def build_model_inputs_from_raw(
         race_level[["raceId", "season_prev_mean_pace", "season_prev_mean_resid"]],
         on="raceId",
         how="left",
+    )
+    
+    # -------------------------------------------------
+    # Feature estructural por (circuitId, era_bin) SIN LEAKAGE (shift)
+    # (ahora season_prev_mean_pace YA existe)
+    # -------------------------------------------------
+    g_ce_feat = df_reg.groupby(["circuitId", "era_bin"], sort=False)["target_reg"]
+    df_reg["circuit_era_mean_pace_prev"] = (
+        g_ce_feat.apply(lambda s: s.shift(1).expanding(min_periods=5).mean())
+        .reset_index(level=[0, 1], drop=True)
+    )
+
+    # Fallback robusto
+    df_reg["circuit_era_mean_pace_prev"] = (
+        df_reg["circuit_era_mean_pace_prev"]
+        .fillna(df_reg["season_prev_mean_pace"])
+        .fillna(global_mean)
     )
 
     # --------------------
@@ -546,10 +594,13 @@ def build_model_inputs_from_raw(
         if col in df_reg.columns:
             df_reg[out] = (df_reg[col] / rounds_done).fillna(0.0)
 
-    # interacción categórica driver+constructor
+    # interacción categórica driver+constructor (robusto a NA)
     df_reg["driver_constructor"] = (
-        df_reg["driverId"].astype("Int64").astype(str) + "_" + df_reg["constructorId"].astype("Int64").astype(str)
+        df_reg["driverId"].fillna(-1).astype(int).astype(str)
+        + "_"
+        + df_reg["constructorId"].fillna(-1).astype(int).astype(str)
     )
+
 
     # rollings de qualy (shifted)
     df_reg = _add_qualy_rollings(df_reg)

@@ -7,7 +7,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=train_and_evaluate_regression,
                 inputs=dict(
-                    model_input_regression="model_input_regression_with_clusters",
+                    model_input_regression="model_input_regression",
                     modeling="params:modeling",
                 ),
                 outputs=[

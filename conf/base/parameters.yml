@@ -81,16 +81,16 @@ modeling:
   # ====== Regresión ======
   use_time_split: true
   time_split_year_cutoff: 2018
-  use_log_target: false
-  reg_target_mode: "pace"   # opciones: pace | residual
-  reg_fast_mode: true
+  use_log_target: true
+  reg_target_mode: "pace"   # opciones: pace | residual | relative
+  reg_fast_mode: false
 
   reg_pick_recent: true
-  reg_train_last_n_races: null
+  reg_train_last_n_races: 350
   reg_max_rows_total: null
 
   fi_top_k: 30
-  reg_train_sample_frac: 0.85
+  reg_train_sample_frac: 1.0
   reg_train_sample_n_races: null
   reg_train_sample_seed: 42
   reg_train_sample_recent_pool_frac: 1.0

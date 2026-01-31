@@ -36,6 +36,7 @@ from sklearn.ensemble import (
 )
 from sklearn.svm import SVR
 from sklearn.neighbors import KNeighborsRegressor
+from sklearn.base import BaseEstimator
 
 
 # ----------------------------
@@ -88,7 +89,7 @@ def _dense_transformer() -> FunctionTransformer:
     return FunctionTransformer(_to_dense, accept_sparse=True)
 
 
-def _build_preprocessor(df: pd.DataFrame, kind: str) -> ColumnTransformer:
+def _build_preprocessor(df: pd.DataFrame, kind: str) -> BaseEstimator:
     """
     Preprocessor robusto:
     - Imputa NaNs en cat y num dentro del pipeline (fit SOLO en train).
@@ -103,7 +104,13 @@ def _build_preprocessor(df: pd.DataFrame, kind: str) -> ColumnTransformer:
         cat_cols.append("country")
     if "driver_constructor" in df.columns:
         cat_cols.append("driver_constructor")
+
+    # ✅ era_bin es categoría (ej: "30_6"), NO numérica
+    if "era_bin" in df.columns:
+        cat_cols.append("era_bin")
+
     cat_cols = [c for c in cat_cols if c in df.columns]
+
 
     # --------
     # Numéricas candidatas (ALINEADAS con model_input/nodes.py)
@@ -112,10 +119,11 @@ def _build_preprocessor(df: pd.DataFrame, kind: str) -> ColumnTransformer:
     candidate_num = [
         # Básicas
         "grid", "year", "round",
-        "laps",  # proxy pre-carrera (laps_expected)
+        "laps_expected",  # proxy pre-carrera (laps_expected)
         "circuit_baseline_pace",
+        "circuit_era_mean_pace_prev",
         "n_drivers_race", "grid_pct_in_race",
-        "season_progress", "era_bin",
+        "season_progress",
         "driver_circuit_prev_count", "driver_circuit_log",
         "season_prev_mean_pace", "season_prev_mean_resid",
 
@@ -161,10 +169,48 @@ def _build_preprocessor(df: pd.DataFrame, kind: str) -> ColumnTransformer:
     ]
 
     num_cols = [c for c in candidate_num if c in df.columns]
+    
+    print(f"[DEBUG] _build_preprocessor kind={kind} | n_cat={len(cat_cols)} | n_num={len(num_cols)}")
+    
+    allowed = {"tree", "catboost", "linear"}
+    if kind not in allowed:
+        # Por compatibilidad: cualquier cosa que no sea tree/catboost se tratará como lineal,
+        # pero lo avisamos para evitar bugs silenciosos.
+        print(f"[WARNING] kind='{kind}' no reconocido -> usando preprocessor LINEAR por defecto")
+
 
     # Árboles/boosting: OneHot (sin scaler) + imputación
     # Motivo: OrdinalEncoder introduce un "orden" artificial y suele bajar mucho el R² en árboles.
+    
+    # CatBoost: NO onehot. Devolvemos un transformer que mantiene DataFrame
+    # y deja las categóricas como strings (CatBoost maneja categorías nativamente).
+    if kind == "catboost":
+        def _prep_cb(X: pd.DataFrame) -> pd.DataFrame:
+            X = X.copy()
+
+            keep_cols = [c for c in (cat_cols + num_cols) if c in X.columns]
+            X = X[keep_cols].copy()
+
+            # categóricas -> string (evita dtype category)
+            for c in cat_cols:
+                if c in X.columns:
+                    X[c] = X[c].astype("string").fillna("NA")
+
+            # numéricas -> float
+            for c in num_cols:
+                if c in X.columns:
+                    X[c] = pd.to_numeric(X[c], errors="coerce")
+
+            return X
+
+        return Pipeline(steps=[
+            ("prep", FunctionTransformer(_prep_cb, validate=False)),
+        ])
+
+
+
     if kind == "tree":
+        print("[DEBUG] TREE preprocessor: USING ONEHOT (not ordinal)")
         return ColumnTransformer(
             transformers=[
                 ("cat", Pipeline([
@@ -205,8 +251,8 @@ def _get_candidates(random_state: int, fast_mode: bool):
             ("ridge", Ridge(), {"model__alpha": [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]}, "linear", False),
 
             ("elasticnet",
-             ElasticNet(max_iter=40000, tol=1e-3),
-             {"model__alpha": [0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0], "model__l1_ratio": [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]},
+             ElasticNet(max_iter=300000, tol=1e-4),
+             {"model__alpha": [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1, 1.0, 3.0], "model__l1_ratio": [0.01, 0.05, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.97]},
              "linear",
              False),
 
@@ -255,28 +301,29 @@ def _get_candidates(random_state: int, fast_mode: bool):
              False),
 
             ("catboost",
-             CatBoostRegressor(
-                 loss_function="RMSE",
-                 random_seed=random_state,
-                 verbose=False,
-                 allow_writing_files=False,
-             ),
-             {
-                 "model__depth": [6, 8],
-                 "model__learning_rate": [0.05, 0.1],
-                 "model__iterations": [600],
-                 "model__l2_leaf_reg": [3, 10],
-             },
-             "tree",
-             True),
+            CatBoostRegressor(
+                loss_function="RMSE",
+                random_seed=random_state,
+                verbose=False,
+                allow_writing_files=False,
+            ),
+            {
+                "model__depth": [6, 8],
+                "model__learning_rate": [0.05, 0.1],
+                "model__iterations": [600],
+                "model__l2_leaf_reg": [3, 10],
+            },
+            "catboost",
+            False),
+
         ]
 
     return [
         ("ridge", Ridge(), {"model__alpha": [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]}, "linear", False),
 
         ("elasticnet",
-         ElasticNet(max_iter=60000, tol=1e-3),
-         {"model__alpha": [0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0], "model__l1_ratio": [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]},
+         ElasticNet(max_iter=300000, tol=1e-4),
+         {"model__alpha": [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1, 1.0, 3.0], "model__l1_ratio": [0.01, 0.05, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.97]},
          "linear",
          False),
 
@@ -337,20 +384,21 @@ def _get_candidates(random_state: int, fast_mode: bool):
          True),
 
         ("catboost",
-         CatBoostRegressor(
-             loss_function="RMSE",
-             random_seed=random_state,
-             verbose=False,
-             allow_writing_files=False,
-         ),
-         {
-             "model__depth": [6, 8, 10],
-             "model__learning_rate": [0.03, 0.05, 0.1],
-             "model__iterations": [800, 1500],
-             "model__l2_leaf_reg": [1, 3, 10],
-         },
-         "tree",
-         True),
+        CatBoostRegressor(
+            loss_function="RMSE",
+            random_seed=random_state,
+            verbose=False,
+            allow_writing_files=False,
+        ),
+        {
+            "model__depth": [6, 8],
+            "model__learning_rate": [0.05, 0.1],
+            "model__iterations": [600],
+            "model__l2_leaf_reg": [3, 10],
+        },
+        "catboost",
+        False),
+
     ]
 
 
@@ -711,24 +759,38 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
     # Definir target (CONTROLADO POR PARÁMETRO)
     # ----------------------------
     reg_target_mode = str(modeling.get("reg_target_mode", "pace")).strip().lower()
-    if reg_target_mode not in {"pace", "residual"}:
-        raise ValueError(f"reg_target_mode inválido: {reg_target_mode}. Usa 'pace' o 'residual'.")
+    if reg_target_mode not in {"pace", "residual", "relative"}:
+        raise ValueError("reg_target_mode debe ser: 'pace', 'residual' o 'relative'.")
 
-    use_resid = (
-        reg_target_mode == "residual"
-        and ("target_resid" in df.columns)
-        and ("circuit_baseline_pace" in df.columns)
-    )
+    use_resid = False
+    use_rel = False
+    
+    # -------------------------------------------------
+    # Baseline para reconstrucción de pace (solo si entrenamos residual/relative)
+    # -------------------------------------------------
+    baseline_col = None
+    if reg_target_mode in ("residual", "relative"):
+        baseline_col = "circuit_baseline_pace"
 
-    if use_resid:
+    if reg_target_mode == "residual":
+        if ("target_resid" not in df.columns) or ("circuit_baseline_pace" not in df.columns):
+            raise ValueError("Para reg_target_mode='residual' se requieren target_resid y circuit_baseline_pace.")
         y = pd.to_numeric(df.loc[mask, "target_resid"], errors="coerce")
-        use_log = False  # residual puede ser negativo
         baseline_all = pd.to_numeric(df.loc[mask, "circuit_baseline_pace"], errors="coerce")
+        use_resid = True
+
+    elif reg_target_mode == "relative":
+        if ("target_rel" not in df.columns) or ("circuit_baseline_pace" not in df.columns):
+            raise ValueError("Para reg_target_mode='relative' se requieren target_rel y circuit_baseline_pace.")
+        y = pd.to_numeric(df.loc[mask, "target_rel"], errors="coerce")
+        baseline_all = pd.to_numeric(df.loc[mask, "circuit_baseline_pace"], errors="coerce")
+        use_rel = True
+
     else:
-        # ENTRENAMOS PACE (target_reg)
+        # pace directo
         y = y_base.loc[mask].copy()
-        use_log = bool(cfg.use_log_target)
         baseline_all = None
+
 
     # ----------------------------
     # Drop columns (NO leakage en X)
@@ -738,6 +800,8 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
         drop_cols.append("target_ms")
     if "target_resid" in df.columns:
         drop_cols.append("target_resid")
+    if "target_rel" in df.columns:
+        drop_cols.append("target_rel")
     if "laps_actual" in df.columns:
         drop_cols.append("laps_actual")
     for c in ["true_ms", "pred_ms", "milliseconds"]:
@@ -836,8 +900,122 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
     # ----------------------------
     cv, cv_strategy = _build_cv(X_train, cfg)
 
-    scoring = {"rmse": "neg_root_mean_squared_error", "mae": "neg_mean_absolute_error", "r2": "r2"}
-    refit_metric = "r2"  # <-- objetivo: maximizar R² en pace
+    # -------------------------------------------------
+    # Scoring CV en "pace" incluso si el target entrenado es residual.
+    # - Si use_resid=True, reconstruimos pace con X["circuit_baseline_pace"]
+    # - Así mean_test_r2 / rmse / mae quedan realmente en PACE (tu objetivo)
+    # -------------------------------------------------
+
+    # fallback robusto para baseline dentro de CV
+    _fallback_base = None
+    if baseline_train is not None:
+        _fallback_base = float(np.nanmedian(baseline_train.values))
+    elif baseline_all is not None:
+        _fallback_base = float(np.nanmedian(baseline_all.values))
+
+    def _get_base_from_X(X):
+        # Si no corresponde reconstrucción (pace directo), no hay baseline
+        if baseline_col is None:
+            return None
+
+        # Asegurar que X sea DataFrame
+        if not isinstance(X, pd.DataFrame):
+            return None
+
+        if baseline_col not in X.columns:
+            return None
+
+        s = pd.to_numeric(X[baseline_col], errors="coerce")
+
+        if _fallback_base is not None:
+            s = s.fillna(_fallback_base)
+
+        return s.values.astype(float)
+
+
+    def _score_r2(estimator, X, y):
+        pred = np.asarray(estimator.predict(X)).astype(float)
+        y_true = np.asarray(y).astype(float)
+
+        if baseline_col is not None:
+            base = _get_base_from_X(X)
+            if base is None:
+                return -np.inf
+
+            if use_resid:
+                # residual: pace = resid + base
+                y_true = y_true + base
+                pred = pred + base
+
+            elif use_rel:
+                # relative: pace = base*(1 + rel)
+                y_true = base * (1.0 + y_true)
+                pred = base * (1.0 + pred)
+
+
+
+        valid = np.isfinite(y_true) & np.isfinite(pred)
+        if int(valid.sum()) == 0:
+            return -np.inf
+        return float(r2_score(y_true[valid], pred[valid]))
+
+    def _score_rmse(estimator, X, y):
+        pred = np.asarray(estimator.predict(X)).astype(float)
+        y_true = np.asarray(y).astype(float)
+
+        if baseline_col is not None:
+            base = _get_base_from_X(X)
+            if base is None:
+                return -np.inf
+
+            if use_resid:
+                # residual: pace = resid + base
+                y_true = y_true + base
+                pred = pred + base
+
+            elif use_rel:
+                # relative: pace = base*(1 + rel)
+                y_true = base * (1.0 + y_true)
+                pred = base * (1.0 + pred)
+
+
+
+        valid = np.isfinite(y_true) & np.isfinite(pred)
+        if int(valid.sum()) == 0:
+            return -np.inf
+        rmse = float(np.sqrt(mean_squared_error(y_true[valid], pred[valid])))
+        return -rmse  # NEGATIVO para que GridSearchCV "maximice" (convención sklearn)
+
+    def _score_mae(estimator, X, y):
+        pred = np.asarray(estimator.predict(X)).astype(float)
+        y_true = np.asarray(y).astype(float)
+
+        if baseline_col is not None:
+            base = _get_base_from_X(X)
+            if base is None:
+                return -np.inf
+
+            if use_resid:
+                # residual: pace = resid + base
+                y_true = y_true + base
+                pred = pred + base
+
+            elif use_rel:
+                # relative: pace = base*(1 + rel)
+                y_true = base * (1.0 + y_true)
+                pred = base * (1.0 + pred)
+
+
+
+        valid = np.isfinite(y_true) & np.isfinite(pred)
+        if int(valid.sum()) == 0:
+            return -np.inf
+        mae = float(mean_absolute_error(y_true[valid], pred[valid]))
+        return -mae  # NEGATIVO para que GridSearchCV "maximice"
+
+    scoring = {"rmse": _score_rmse, "mae": _score_mae, "r2": _score_r2}
+    refit_metric = "r2"  # ahora sí: este r2 ES pace
+
 
     rows = []
     best_estimators = {}  # guardamos el mejor estimator por modelo (refit por r2)
@@ -846,15 +1024,52 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
     best_cv_r2 = -np.inf
 
     candidates = _get_candidates(cfg.random_state, fast_mode=cfg.reg_fast_mode)
+    
+    y_train_base = y_train.copy()
+    y_test_base = y_test.copy()
+
 
     for name, model, grid, kind, needs_dense in candidates:
         preprocessor = _build_preprocessor(X_train.drop(columns=["raceId"], errors="ignore"), kind=kind)
 
+        ytr_fit = y_train_base
+        yte_fit = y_test_base
+
+        # solo si tu modo realmente requiere clip (ej: relative)
+        if reg_target_mode == "relative":
+            ytr_fit = pd.Series(y_train_base).clip(-0.35, 0.35)
+            yte_fit = pd.Series(y_test_base).clip(-0.35, 0.35)
+
         steps = [("preprocess", preprocessor)]
-        if needs_dense:
+
+        if kind == "catboost":
+            Xtmp = X_train.drop(columns=["raceId"], errors="ignore")
+
+            cat_cols_cb = ["driverId", "constructorId", "circuitId"]
+            if "country" in Xtmp.columns:
+                cat_cols_cb.append("country")
+            if "driver_constructor" in Xtmp.columns:
+                cat_cols_cb.append("driver_constructor")
+            cat_cols_cb = [c for c in cat_cols_cb if c in Xtmp.columns]
+
+            # OJO: en el preprocesador CatBoost el orden es cat_cols + num_cols
+            cat_idx = list(range(len(cat_cols_cb)))
+            try:
+                model.set_params(cat_features=cat_idx)
+            except Exception:
+                pass
+
+        if needs_dense and kind != "catboost":
             steps.append(("to_dense", _dense_transformer()))
+
         steps.append(("model", model))
         base_pipe = Pipeline(steps)
+
+        
+        # -------------------------------------------------
+        # Control de log1p del target (solo tiene sentido para pace absoluto)
+        # -------------------------------------------------
+        use_log = bool(modeling.get("use_log_target", False)) and (reg_target_mode == "pace")
 
         # log1p solo si corresponde (solo para pace, no residual)
         if use_log:
@@ -874,6 +1089,14 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
             param_grid = grid
             log_used = False
 
+        # -------------------------------------------------
+        # Stabilize relative target (reduce outlier influence)
+        # -------------------------------------------------
+        if use_rel:
+            # clip suave para evitar que carreras raras dominen el ajuste
+            ytr_fit = pd.Series(ytr_fit).clip(-0.35, 0.35).values
+            yte_fit = pd.Series(yte_fit).clip(-0.35, 0.35).values
+
         gs = GridSearchCV(
             estimator=estimator,
             param_grid=param_grid,
@@ -888,12 +1111,52 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
 
         Xtr_fit = X_train.drop(columns=["raceId"], errors="ignore")
         Xte_fit = X_test.drop(columns=["raceId"], errors="ignore")
+        
+        # -------------------------------------------------
+        # Columnas categóricas para CatBoost (seguras y explícitas)
+        # - Solo usamos columnas que existan realmente en Xtr_fit
+        # - NO incluimos raceId (ya se dropeó)
+        # -------------------------------------------------
+        # -------------------------------------------------
+        # Columnas categóricas para CatBoost (robusto):
+        # - Incluye todas las columnas tipo object/string
+        # - Más las IDs típicas si existen
+        # -------------------------------------------------
+        candidate_cat_cols = ["driverId", "constructorId", "circuitId", "cluster", "clusterId", "race_cluster"]
 
+        # 1) columnas object/string/category presentes (category era el bug típico)
+        obj_cols = Xtr_fit.select_dtypes(include=["object", "string", "category"]).columns.tolist()
+
+
+        # 2) IDs típicas presentes (por si vienen como int)
+        id_cols = [c for c in candidate_cat_cols if c in Xtr_fit.columns]
+
+        # 3) unión sin duplicados (mantener orden)
+        cat_cols = []
+        for c in obj_cols + id_cols:
+            if c not in cat_cols:
+                cat_cols.append(c)
+
+        print(f"[DEBUG] CatBoost cat_cols ({len(cat_cols)}): {cat_cols[:15]}{'...' if len(cat_cols) > 15 else ''}")
+
+
+        # -------------------------------------------------
+        # Fit params especiales para CatBoost (categorías nativas)
+        # - Solo aplica cuando el "name" del modelo es "catboost"
+        # - Requiere que el preprocessor kind sea "catboost" (mantiene DataFrame)
+        # - Y que el step del estimador en Pipeline se llame "model"
+        # -------------------------------------------------
+        fit_kwargs = {}
+        if name == "catboost":
+            fit_kwargs["model__cat_features"] = cat_cols  # cat_cols debe estar definido (n_cat=4)
+
+        # ytr_fit es el y de entrenamiento (y_train) pero estabilizado si corresponde
         if isinstance(cv, GroupKFold):
             groups = X_train["raceId"].values
-            gs.fit(Xtr_fit, y_train, groups=groups)
+            gs.fit(Xtr_fit, ytr_fit, groups=groups)
         else:
-            gs.fit(Xtr_fit, y_train)
+            gs.fit(Xtr_fit, ytr_fit)
+
 
         best = gs.best_estimator_
         best_idx = gs.best_index_
@@ -908,14 +1171,22 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
         # predicción en el target entrenado (resid o pace)
         y_pred_target = best.predict(Xte_fit)
 
-        # reconstruir pace real si entrenaste residual
+        # reconstrucción de pace (si entrenaste residual o relative)
         if use_resid:
             base = baseline_test.values.astype(float)
-            y_true_pace = (y_test.values.astype(float) + base)
-            y_pred_pace = (np.asarray(y_pred_target).astype(float) + base)
+            y_true_pace = base + y_test.values.astype(float)
+            y_pred_pace = base + np.asarray(y_pred_target).astype(float)
+
+        elif use_rel:
+            base = baseline_test.values.astype(float)
+            y_true_pace = base * (1.0 + y_test.values.astype(float))
+            y_pred_pace = base * (1.0 + np.asarray(y_pred_target).astype(float))
+
         else:
+            # pace directo
             y_true_pace = y_test.values.astype(float)
             y_pred_pace = np.asarray(y_pred_target).astype(float)
+
 
         valid_pace = np.isfinite(y_true_pace) & np.isfinite(y_pred_pace)
         test_rmse = float(np.sqrt(mean_squared_error(y_true_pace[valid_pace], y_pred_pace[valid_pace])))
@@ -973,7 +1244,12 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
         pd.DataFrame(rows)
         .sort_values("cv_r2_mean_pace", ascending=False)
         .reset_index(drop=True)
-)
+    )
+    
+    # --- Guard: si no se evaluó ningún modelo, detener con mensaje claro
+    if results is None or len(results) == 0:
+        raise ValueError("No se generaron resultados (rows vacío). Revisa que haya modelos en el grid y que no estén fallando en fit().")
+
 
     # -------------------------------------------------
     # Consistencia final: el mejor es el top-1 por cv_r2_mean_pace
@@ -984,14 +1260,24 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
     # predicciones del mejor modelo
     Xte_fit = X_test.drop(columns=["raceId"], errors="ignore")
     best_pred_target = best_estimator.predict(Xte_fit)
-
+    
+    # -------------------------------------------------
+    # Reconstrucción final a pace (para pred_df y plots)
+    # -------------------------------------------------
     if use_resid:
         base = baseline_test.values.astype(float)
         y_true_pace = (y_test.values.astype(float) + base)
         y_pred_pace = (np.asarray(best_pred_target).astype(float) + base)
+
+    elif use_rel:
+        base = baseline_test.values.astype(float)
+        y_true_pace = base * (1.0 + y_test.values.astype(float))
+        y_pred_pace = base * (1.0 + np.asarray(best_pred_target).astype(float))
+
     else:
         y_true_pace = y_test.values.astype(float)
         y_pred_pace = np.asarray(best_pred_target).astype(float)
+
 
     pred_df = pd.DataFrame(
         {
