@@ -160,3 +160,15 @@ venv.bak/
 
 # mlflow local runs
 mlruns/*
+
+conf/local/*.json
+
+# --- DVC metadata must be committed ---
+!.dvc/
+!.dvcignore
+!dvc.yaml
+!dvc.lock
+
+# allow tracking files created by dvc add
+!**/*.dvc
+!data/**/*.dvc

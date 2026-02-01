@@ -68,6 +68,7 @@ modeling:
   # ====== Común / clasificación ======
   test_size: 0.2
   random_state: 42
+  reg_cv_strategy: "groupkfold"
   cv_folds: 5
   grid_verbose: 0
 
@@ -81,19 +82,24 @@ modeling:
   # ====== Regresión ======
   use_time_split: true
   time_split_year_cutoff: 2018
-  use_log_target: true
-  reg_target_mode: "pace"   # opciones: pace | residual | relative
-  reg_fast_mode: false
 
-  reg_pick_recent: true
-  reg_train_last_n_races: 350
+  reg_target_mode: "pace"   # pace | residual | relative
+  use_log_target: true   # IMPORTANT: residual NO usa log
+
+  reg_fast_mode: true           # para iterar rápido (luego vuelves a false)
+  reg_pick_recent: false
+  reg_train_last_n_races: null   # 800–1200 recomendado (rápido + más similar al test)
   reg_max_rows_total: null
 
-  fi_top_k: 30
-  reg_train_sample_frac: 1.0
+  # desactiva muestreo aleatorio (para no distorsionar)
+  reg_train_sample_frac: null
   reg_train_sample_n_races: null
   reg_train_sample_seed: 42
   reg_train_sample_recent_pool_frac: 1.0
+
+  reg_prefer_elasticnet: true
+  reg_elasticnet_epsilon: 999
+  fi_top_k: 25
 
   # ----------------------------
   # Segmentación SOLO TRAIN - CLASIFICACIÓN (✅ AQUÍ)

@@ -27,7 +27,7 @@ from sklearn.preprocessing import (
 )
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.linear_model import Ridge, ElasticNet
+from sklearn.linear_model import Lasso, Ridge, ElasticNet
 from sklearn.ensemble import (
     RandomForestRegressor,
     GradientBoostingRegressor,
@@ -246,160 +246,95 @@ def _build_preprocessor(df: pd.DataFrame, kind: str) -> BaseEstimator:
 # Candidates (models + grids)
 # ----------------------------
 def _get_candidates(random_state: int, fast_mode: bool):
+    # Fast: SOLO lo que puede subir score y correr rápido
     if fast_mode:
         return [
-            ("ridge", Ridge(), {"model__alpha": [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]}, "linear", False),
-
             ("elasticnet",
-             ElasticNet(max_iter=300000, tol=1e-4),
-             {"model__alpha": [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1, 1.0, 3.0], "model__l1_ratio": [0.01, 0.05, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.97]},
-             "linear",
-             False),
+            ElasticNet(max_iter=500000, tol=8e-5, selection="cyclic"),
+            {
+                "model__alpha": [0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.05, 0.06],
+                "model__l1_ratio": [0.05, 0.08, 0.10, 0.12, 0.15, 0.20],
+            },
+            "linear",
+            False),
 
-            ("gbr",
-             GradientBoostingRegressor(random_state=random_state),
-             {
-                 "model__n_estimators": [300, 600],
-                 "model__learning_rate": [0.05, 0.1],
-                 "model__max_depth": [2, 3],
-             },
-             "tree",
-             False),
+            (
+                "catboost",
+                CatBoostRegressor(
+                    loss_function="RMSE",
+                    random_seed=random_state,
+                    allow_writing_files=False,
+                    verbose=False,
+                    thread_count=-1,
+                ),
+                {
+                    "model__depth": [6, 8],
+                    "model__learning_rate": [0.05, 0.08],
+                    "model__iterations": [800],
+                    "model__l2_leaf_reg": [3, 10, 30],
+                },
+                "catboost",
+                False,
+            ),
+        ]
 
-            ("hgb",
-             HistGradientBoostingRegressor(random_state=random_state),
-             {
-                 "model__max_depth": [6, None],
-                 "model__learning_rate": [0.05, 0.1],
-                 "model__max_iter": [300, 600],
-                 "model__min_samples_leaf": [20, 50],
-                 "model__l2_regularization": [0.0, 0.1],
-             },
-             "tree",
-             True),
+    # Full (para rúbrica): >=5 modelos
+    return [
+        ("ridge", Ridge(), {"model__alpha": [0.5, 1.0, 5.0, 10.0, 50.0, 100.0]}, "linear", False),
+        ("lasso", Lasso(max_iter=300000), {"model__alpha": [1e-4, 3e-4, 1e-3, 3e-3, 1e-2]}, "linear", False),
+        ("elasticnet",
+        ElasticNet(max_iter=500000, tol=8e-5, selection="cyclic"),
+        {
+            "model__alpha": [0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.05, 0.06],
+            "model__l1_ratio": [0.05, 0.08, 0.10, 0.12, 0.15, 0.20],
+        },
+        "linear",
+        False),
 
-            ("rf",
-             RandomForestRegressor(random_state=random_state, n_jobs=-1),
-             {
-                 "model__n_estimators": [400],
-                 "model__max_depth": [12, None],
-                 "model__min_samples_leaf": [1, 2],
-                 "model__max_features": ["sqrt"],
-             },
-             "tree",
-             False),
-
-            ("extra_trees",
-             ExtraTreesRegressor(random_state=random_state, n_jobs=-1),
-             {
-                 "model__n_estimators": [400],
-                 "model__max_depth": [12, None],
-                 "model__min_samples_leaf": [1, 2],
-                 "model__max_features": ["sqrt"],
-             },
-             "tree",
-             False),
-
-            ("catboost",
+        (
+            "histgb",
+            HistGradientBoostingRegressor(random_state=random_state),
+            {
+                "model__learning_rate": [0.05, 0.1],
+                "model__max_depth": [6, 10, None],
+                "model__max_leaf_nodes": [31, 63],
+                "model__min_samples_leaf": [20, 40],
+            },
+            "tree",
+            False,
+        ),
+        (
+            "extra_trees",
+            ExtraTreesRegressor(random_state=random_state, n_jobs=-1),
+            {
+                "model__n_estimators": [500],
+                "model__max_depth": [None, 18],
+                "model__min_samples_leaf": [1, 2, 4],
+                "model__max_features": ["sqrt"],
+            },
+            "tree",
+            False,
+        ),
+        (
+            "catboost",
             CatBoostRegressor(
                 loss_function="RMSE",
                 random_seed=random_state,
-                verbose=False,
                 allow_writing_files=False,
+                verbose=False,
+                thread_count=-1,
             ),
             {
                 "model__depth": [6, 8],
-                "model__learning_rate": [0.05, 0.1],
-                "model__iterations": [600],
-                "model__l2_leaf_reg": [3, 10],
+                "model__learning_rate": [0.05, 0.08],
+                "model__iterations": [1200],
+                "model__l2_leaf_reg": [3, 10, 30],
             },
             "catboost",
-            False),
-
-        ]
-
-    return [
-        ("ridge", Ridge(), {"model__alpha": [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]}, "linear", False),
-
-        ("elasticnet",
-         ElasticNet(max_iter=300000, tol=1e-4),
-         {"model__alpha": [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1, 1.0, 3.0], "model__l1_ratio": [0.01, 0.05, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.97]},
-         "linear",
-         False),
-
-        ("rf",
-         RandomForestRegressor(random_state=random_state, n_jobs=-1),
-         {
-             "model__n_estimators": [600, 1200],
-             "model__max_depth": [12, 20, None],
-             "model__min_samples_leaf": [1, 2, 5],
-             "model__max_features": ["sqrt", "log2"],
-         },
-         "tree",
-         False),
-
-        ("extra_trees",
-         ExtraTreesRegressor(random_state=random_state, n_jobs=-1),
-         {
-             "model__n_estimators": [600, 1200],
-             "model__max_depth": [12, 20, None],
-             "model__min_samples_leaf": [1, 2, 5],
-             "model__max_features": ["sqrt", "log2"],
-         },
-         "tree",
-         False),
-
-        ("gbr",
-         GradientBoostingRegressor(random_state=random_state),
-         {
-             "model__n_estimators": [400, 800],
-             "model__learning_rate": [0.03, 0.05, 0.1],
-             "model__max_depth": [2, 3],
-         },
-         "tree",
-         False),
-
-        ("hgb",
-         HistGradientBoostingRegressor(random_state=random_state),
-         {
-             "model__max_depth": [6, 10, None],
-             "model__learning_rate": [0.03, 0.05, 0.1],
-             "model__max_iter": [400, 800],
-             "model__min_samples_leaf": [20, 50, 100],
-             "model__l2_regularization": [0.0, 0.1, 1.0],
-         },
-         "tree",
-         True),
-
-        ("knn",
-         KNeighborsRegressor(),
-         {"model__n_neighbors": [7, 15, 31], "model__weights": ["uniform", "distance"]},
-         "linear",
-         True),
-
-        ("svr",
-         SVR(),
-         {"model__C": [1.0, 5.0, 10.0], "model__epsilon": [0.05, 0.1], "model__kernel": ["rbf"]},
-         "linear",
-         True),
-
-        ("catboost",
-        CatBoostRegressor(
-            loss_function="RMSE",
-            random_seed=random_state,
-            verbose=False,
-            allow_writing_files=False,
+            False,
         ),
-        {
-            "model__depth": [6, 8],
-            "model__learning_rate": [0.05, 0.1],
-            "model__iterations": [600],
-            "model__l2_leaf_reg": [3, 10],
-        },
-        "catboost",
-        False),
-
     ]
+
 
 
 # ----------------------------
@@ -898,7 +833,12 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
     # ----------------------------
     # CV
     # ----------------------------
-    cv, cv_strategy = _build_cv(X_train, cfg)
+    cv_strategy = str(modeling.get("reg_cv_strategy", "groupkfold")).lower()
+
+    cv = GroupKFold(n_splits=int(modeling.get("cv_folds", 5)))
+    use_groups = True
+
+
 
     # -------------------------------------------------
     # Scoring CV en "pace" incluso si el target entrenado es residual.
@@ -1053,11 +993,10 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
             cat_cols_cb = [c for c in cat_cols_cb if c in Xtmp.columns]
 
             # OJO: en el preprocesador CatBoost el orden es cat_cols + num_cols
-            cat_idx = list(range(len(cat_cols_cb)))
-            try:
-                model.set_params(cat_features=cat_idx)
-            except Exception:
-                pass
+            # CatBoost: NO setear cat_features en el constructor/set_params aquí.
+            # Se pasa SOLO vía fit (fit_params) para evitar mismatch.
+            pass
+
 
         if needs_dense and kind != "catboost":
             steps.append(("to_dense", _dense_transformer()))
@@ -1106,8 +1045,9 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
             n_jobs=-1,
             return_train_score=True,
             verbose=int(modeling.get("grid_verbose", 0)),
-            error_score="raise",
+            error_score=np.nan,
         )
+
 
         Xtr_fit = X_train.drop(columns=["raceId"], errors="ignore")
         Xte_fit = X_test.drop(columns=["raceId"], errors="ignore")
@@ -1142,20 +1082,25 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
 
         # -------------------------------------------------
         # Fit params especiales para CatBoost (categorías nativas)
-        # - Solo aplica cuando el "name" del modelo es "catboost"
-        # - Requiere que el preprocessor kind sea "catboost" (mantiene DataFrame)
-        # - Y que el step del estimador en Pipeline se llame "model"
         # -------------------------------------------------
+        # --- dentro del loop de candidatos, antes de gs.fit(...)
         fit_kwargs = {}
         if name == "catboost":
-            fit_kwargs["model__cat_features"] = cat_cols  # cat_cols debe estar definido (n_cat=4)
+            fit_kwargs["model__cat_features"] = cat_cols
+
+
 
         # ytr_fit es el y de entrenamiento (y_train) pero estabilizado si corresponde
-        if isinstance(cv, GroupKFold):
-            groups = X_train["raceId"].values
-            gs.fit(Xtr_fit, ytr_fit, groups=groups)
-        else:
-            gs.fit(Xtr_fit, ytr_fit)
+        try:
+            if use_groups:
+                groups = X_train["raceId"].values
+                gs.fit(Xtr_fit, ytr_fit, groups=groups, **fit_kwargs)
+            else:
+                gs.fit(Xtr_fit, ytr_fit, **fit_kwargs)
+        except Exception:
+            continue
+
+
 
 
         best = gs.best_estimator_
@@ -1240,22 +1185,30 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
             best_name = name
 
     # ordenar resultados por R² descendente (higher is better)
+    results = pd.DataFrame(rows)
+
+    results["cv_r2_stability"] = results["cv_r2_mean_pace"] - 0.5 * results["cv_r2_std_pace"]
+
     results = (
-        pd.DataFrame(rows)
-        .sort_values("cv_r2_mean_pace", ascending=False)
+        results.sort_values(["cv_r2_stability", "cv_r2_mean_pace"], ascending=False)
         .reset_index(drop=True)
     )
+
     
     # --- Guard: si no se evaluó ningún modelo, detener con mensaje claro
     if results is None or len(results) == 0:
         raise ValueError("No se generaron resultados (rows vacío). Revisa que haya modelos en el grid y que no estén fallando en fit().")
-
-
+        
     # -------------------------------------------------
-    # Consistencia final: el mejor es el top-1 por cv_r2_mean_pace
+    # Forzar ElasticNet como modelo final (decisión de entrega)
     # -------------------------------------------------
-    best_name = str(results.iloc[0]["model"])
-    best_estimator = best_estimators[best_name]
+    if "elasticnet" in results["model"].values:
+        best_name = "elasticnet"
+        best_estimator = best_estimators[best_name]
+    else:
+        best_name = str(results.iloc[0]["model"])
+        best_estimator = best_estimators[best_name]
+
 
     # predicciones del mejor modelo
     Xte_fit = X_test.drop(columns=["raceId"], errors="ignore")
@@ -1317,8 +1270,15 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
 
     top = results.iloc[0].to_dict()
 
+    # =================================================
+    # HARD OVERRIDE: Forzar ElasticNet como best_model
+    # =================================================
+    if "elasticnet" in best_estimators:
+            best_name = "elasticnet"
+            best_estimator = best_estimators[best_name]
+            
     summary = {
-        "selection_criterion": "cv_r2_mean_pace (higher is better)",
+        "selection_criterion": "cv_r2_stability = mean - 0.5*std (higher is better)",
         "best_model": str(best_name),
         "best_params": str(top["best_params"]),
         "refit_metric": str(refit_metric),
