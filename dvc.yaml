@@ -1,0 +1,18 @@
+stages:
+  data_engineering:
+    cmd: kedro run --pipeline data_engineering
+    deps:
+    - data/01_raw/
+    - src/proyecto_f1kedro/pipelines/data_engineering/
+    outs:
+    - data/03_primary
+
+  model_input:
+    cmd: kedro run --pipeline model_input
+    deps:
+    - data/03_primary
+    - src/proyecto_f1kedro/pipelines/model_input/
+    outs:
+    - data/05_model_input/model_input_classification.csv
+    - data/05_model_input/model_input_regression.csv
+

@@ -1,0 +1,43 @@
+schema: '2.0'
+stages:
+  data_engineering:
+    cmd: kedro run --pipeline data_engineering
+    deps:
+    - path: data/01_raw/
+      hash: md5
+      md5: dec65eb4a2893557c19e7a62d2707e85.dir
+      size: 3674462
+      nfiles: 8
+    - path: src/proyecto_f1kedro/pipelines/data_engineering/
+      hash: md5
+      md5: 0d7ee8b509cb2950cdb46445af8dfe84.dir
+      size: 11578
+      nfiles: 9
+    outs:
+    - path: data/03_primary
+      hash: md5
+      md5: 061c4031452995eff9bb956a25525cb4.dir
+      size: 188549
+      nfiles: 1
+  model_input:
+    cmd: kedro run --pipeline model_input
+    deps:
+    - path: data/03_primary
+      hash: md5
+      md5: 061c4031452995eff9bb956a25525cb4.dir
+      size: 188549
+      nfiles: 1
+    - path: src/proyecto_f1kedro/pipelines/model_input/
+      hash: md5
+      md5: 3408e977cf6c256dc0bb0c44311db259.dir
+      size: 95571
+      nfiles: 9
+    outs:
+    - path: data/05_model_input/model_input_classification.csv
+      hash: md5
+      md5: 1d8f8ac0ee0568ea5417087925ddec78
+      size: 876989
+    - path: data/05_model_input/model_input_regression.csv
+      hash: md5
+      md5: 4cbb5313db65d1a1ddc877c827f52dfd
+      size: 7557950
