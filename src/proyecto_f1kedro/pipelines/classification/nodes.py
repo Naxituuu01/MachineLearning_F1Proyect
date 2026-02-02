@@ -47,6 +47,7 @@ class SplitConfig:
     grid_verbose: int
     order_by: str
     ohe_min_frequency: int
+    fast_mode: bool
 
 
 # ----------------------------
@@ -138,31 +139,35 @@ def _build_preprocessor(df: pd.DataFrame, ohe_min_frequency: int) -> ColumnTrans
 # Model candidates
 # ----------------------------
 
-def _get_candidates(random_state: int) -> List[Tuple[str, Any, Dict[str, List[Any]]]]:
+def _get_candidates(random_state: int, fast_mode: bool = False) -> List[Tuple[str, Any, Dict[str, List[Any]]]]:
     """
-    >=5 modelos para clasificación con grids moderados (runtime razonable).
-    Incluye HGB (muy fuerte en tabular) y GB, más clásicos.
+    >=5 modelos para clasificación con grids pragmáticos.
+    Si fast_mode es True, se usan grids vacíos y menos modelos.
     """
+    if fast_mode:
+        return [
+            ("hgb", HistGradientBoostingClassifier(random_state=random_state), {}),
+            ("rf", RandomForestClassifier(random_state=random_state, class_weight="balanced", n_jobs=-1), {}),
+            ("logreg", LogisticRegression(max_iter=5000, class_weight="balanced"), {}),
+        ]
+
+    # Full Mode (Pragmatic Tuning)
     return [
         (
             "hgb",
             HistGradientBoostingClassifier(random_state=random_state),
             {
-                "model__learning_rate": [0.03, 0.05, 0.1],
-                "model__max_depth": [3, 5, None],
-                "model__max_iter": [200, 400, 800],
-                "model__min_samples_leaf": [20, 50, 100],
-                "model__l2_regularization": [0.0, 0.1, 1.0],
+                "model__learning_rate": [0.05, 0.1],
+                "model__max_depth": [5, None],
+                "model__max_iter": [400, 800],
             },
         ),
         (
             "gb",
             GradientBoostingClassifier(random_state=random_state),
             {
-                "model__n_estimators": [150, 250, 400],
-                "model__learning_rate": [0.03, 0.05, 0.1],
-                "model__max_depth": [2, 3],
-                "model__subsample": [0.8, 1.0],
+                "model__n_estimators": [200, 400],
+                "model__learning_rate": [0.05, 0.1],
             },
         ),
         (
@@ -170,10 +175,7 @@ def _get_candidates(random_state: int) -> List[Tuple[str, Any, Dict[str, List[An
             RandomForestClassifier(random_state=random_state, class_weight="balanced", n_jobs=-1),
             {
                 "model__n_estimators": [300, 600],
-                "model__max_depth": [10, 20, None],
-                "model__min_samples_split": [2, 5],
-                "model__min_samples_leaf": [1, 2, 5],
-                "model__max_features": ["sqrt", "log2"],
+                "model__max_depth": [10, 20],
             },
         ),
         (
@@ -181,10 +183,7 @@ def _get_candidates(random_state: int) -> List[Tuple[str, Any, Dict[str, List[An
             ExtraTreesClassifier(random_state=random_state, class_weight="balanced", n_jobs=-1),
             {
                 "model__n_estimators": [300, 600],
-                "model__max_depth": [10, 20, None],
-                "model__min_samples_split": [2, 5],
-                "model__min_samples_leaf": [1, 2, 5],
-                "model__max_features": ["sqrt", "log2"],
+                "model__max_depth": [10, 20],
             },
         ),
         (
@@ -192,14 +191,13 @@ def _get_candidates(random_state: int) -> List[Tuple[str, Any, Dict[str, List[An
             LogisticRegression(max_iter=5000, class_weight="balanced"),
             {
                 "model__C": [0.1, 1.0, 10.0],
-                "model__solver": ["lbfgs"],
             },
         ),
         (
             "svc",
             SVC(class_weight="balanced"),
             {
-                "model__C": [0.5, 1.0, 2.0],
+                "model__C": [1.0, 2.0],
                 "model__kernel": ["rbf", "linear"],
             },
         ),
@@ -207,8 +205,7 @@ def _get_candidates(random_state: int) -> List[Tuple[str, Any, Dict[str, List[An
             "knn",
             KNeighborsClassifier(),
             {
-                "model__n_neighbors": [7, 15, 31],
-                "model__weights": ["uniform", "distance"],
+                "model__n_neighbors": [15, 31],
             },
         ),
     ]
@@ -324,6 +321,7 @@ def train_and_evaluate_classification(
         grid_verbose=int(modeling.get("grid_verbose", 0)),
         order_by=str(modeling.get("order_by", "cv_f1_macro_mean")),
         ohe_min_frequency=int(modeling.get("ohe_min_frequency", 10)),
+        fast_mode=bool(modeling.get("cls_fast_mode", False)),
     )
     if cfg.cv_folds < 5:
         raise ValueError("cv_folds debe ser >= 5 para cumplir la rúbrica.")
@@ -369,7 +367,7 @@ def train_and_evaluate_classification(
     Xte_fit = X_test.drop(columns=["raceId"], errors="ignore")
 
     preprocessor = _build_preprocessor(Xtr_fit, ohe_min_frequency=cfg.ohe_min_frequency)
-    candidates = _get_candidates(cfg.random_state)
+    candidates = _get_candidates(cfg.random_state, fast_mode=cfg.fast_mode)
 
     # Multi-métrica y refit por f1_macro (criterio principal defendible)
     scoring = {

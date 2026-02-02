@@ -125,3 +125,27 @@ def plot_distributions(df: pd.DataFrame, show_plots: bool = False) -> None:
         plt.close()
 
     print("✅ Distribuciones generadas correctamente.\n")
+
+
+# ------------------------------------------------------------------------------
+# NODO 5 - Análisis de Correlación
+# ------------------------------------------------------------------------------
+
+def analyze_correlations(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcula la matriz de correlación de las variables numéricas.
+    Ayuda a identificar redundancias y relaciones con el target potencial.
+    """
+    print("\n🔍 ANÁLISIS DE CORRELACIÓN")
+    print("-" * 80)
+    
+    numeric_df = df.select_dtypes(include=["number"])
+    if numeric_df.empty:
+        print("⚠️ No hay columnas numéricas para analizar correlación.")
+        return pd.DataFrame()
+        
+    corr_matrix = numeric_df.corr()
+    print(f"✅ Matriz de correlación calculada ({corr_matrix.shape[0]}x{corr_matrix.shape[1]}).")
+    print("-" * 80)
+    
+    return corr_matrix

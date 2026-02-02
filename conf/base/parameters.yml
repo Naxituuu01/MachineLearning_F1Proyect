@@ -81,29 +81,30 @@ modeling:
 
   # ====== Regresión ======
   use_time_split: true
-  time_split_year_cutoff: 2018
+  time_split_year_cutoff: 2018  # Se mantiene 2018 para testear 2019-2024
 
-  reg_target_mode: "pace"   # pace | residual | relative
-  use_log_target: true   # IMPORTANT: residual NO usa log
+  reg_target_mode: "pace"   # Log-Pace es la clave
+  use_log_target: true      # Normalización multiplicativa
 
-  reg_fast_mode: true           # para iterar rápido (luego vuelves a false)
-  reg_pick_recent: false
-  reg_train_last_n_races: null   # 800–1200 recomendado (rápido + más similar al test)
+  reg_fast_mode: false          # ✅ Modo Producción (Full Grid Search)
+  reg_pick_recent: true         
+  reg_train_last_n_races: 800   # 🏆 CV Peak (800 carreras)
   reg_max_rows_total: null
 
-  # desactiva muestreo aleatorio (para no distorsionar)
+  # desactiva muestreo aleatorio
   reg_train_sample_frac: null
   reg_train_sample_n_races: null
   reg_train_sample_seed: 42
   reg_train_sample_recent_pool_frac: 1.0
 
-  reg_prefer_elasticnet: true
+  reg_prefer_elasticnet: false  
   reg_elasticnet_epsilon: 999
-  fi_top_k: 25
+  fi_top_k: 65
 
   # ----------------------------
   # Segmentación SOLO TRAIN - CLASIFICACIÓN (✅ AQUÍ)
   # ----------------------------
+  cls_fast_mode: false          # ✅ Optimizado para ser pragmático (< 2 min)
   cls_pick_recent: true
   cls_train_sample_frac: null
   cls_train_sample_n_races: null

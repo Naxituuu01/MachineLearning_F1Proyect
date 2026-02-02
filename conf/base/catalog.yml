@@ -278,3 +278,9 @@ clustering_cluster_profile:
   save_args:
     index: false
     encoding: "utf-8-sig"
+
+races_correlation:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/races_correlation.csv
+  save_args:
+    index: true # Keep index for correlation matrix labels

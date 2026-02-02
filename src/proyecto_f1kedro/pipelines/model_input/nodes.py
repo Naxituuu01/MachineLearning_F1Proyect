@@ -179,6 +179,222 @@ def _add_historical_features_regression(df_reg: pd.DataFrame) -> pd.DataFrame:
 
 
 # --------------------
+# Advanced Performance Features (Volatilidad, Momentum, etc)
+# --------------------
+def _add_advanced_performance_features(df_reg: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agregamos features de volatilidad y momentum para capturar dinámicas no cubiertas
+    por promedios móviles simples.
+    """
+    df_reg = df_reg.sort_values(["year", "round", "raceId"]).reset_index(drop=True)
+    
+    global_pace_mean = float(df_reg["target_reg"].mean())
+    global_pace_std = float(df_reg["target_reg"].std())
+    
+    # Ensure rolling means exist when this function is called standalone
+    # (some callers run advanced features without first adding historical rollings)
+    for key, prefix in [("driverId", "driver"), ("constructorId", "constructor"), ("circuitId", "circuit")]:
+        if f"{prefix}_pace_roll_mean_5" not in df_reg.columns:
+            g = df_reg.groupby(key, sort=False)["target_reg"]
+            df_reg[f"{prefix}_pace_roll_mean_5"] = (
+                g.apply(lambda s: _rolling_mean_shifted(s, 5))
+                .reset_index(level=0, drop=True)
+                .fillna(global_pace_mean)
+            )
+        if f"{prefix}_pace_roll_mean_10" not in df_reg.columns:
+            g = df_reg.groupby(key, sort=False)["target_reg"]
+            df_reg[f"{prefix}_pace_roll_mean_10"] = (
+                g.apply(lambda s: _rolling_mean_shifted(s, 10))
+                .reset_index(level=0, drop=True)
+                .fillna(global_pace_mean)
+            )
+        if f"{prefix}_pace_roll_mean_30" not in df_reg.columns:
+            g = df_reg.groupby(key, sort=False)["target_reg"]
+            df_reg[f"{prefix}_pace_roll_mean_30"] = (
+                g.apply(lambda s: _rolling_mean_shifted(s, 30))
+                .reset_index(level=0, drop=True)
+                .fillna(global_pace_mean)
+            )
+    
+    # -------------------------------------------------------
+    # 1) Volatilidad (std de últimas N carreras) por entidad
+    # -------------------------------------------------------
+    for key, prefix in [("driverId", "driver"), ("constructorId", "constructor"), ("circuitId", "circuit")]:
+        g = df_reg.groupby(key, sort=False)["target_reg"]
+        
+        # Volatilidad en últimas 10 carreras (shifted para evitar leakage)
+        df_reg[f"{prefix}_pace_volatility_10"] = (
+            g.apply(lambda s: s.shift(1).rolling(window=10, min_periods=3).std())
+            .reset_index(level=0, drop=True)
+            .fillna(global_pace_std / 2)
+        )
+        
+        # Volatilidad en últimas 30 carreras
+        df_reg[f"{prefix}_pace_volatility_30"] = (
+            g.apply(lambda s: s.shift(1).rolling(window=30, min_periods=5).std())
+            .reset_index(level=0, drop=True)
+            .fillna(global_pace_std / 2)
+        )
+    
+    # -------------------------------------------------------
+    # 2) Momentum (diferencia entre rolling means de períodos diferentes)
+    # -------------------------------------------------------
+    for key, prefix in [("driverId", "driver"), ("constructorId", "constructor"), ("circuitId", "circuit")]:
+        g = df_reg.groupby(key, sort=False)["target_reg"]
+        
+        # Momentum = pace_roll_5 - pace_roll_10 (mejoría/empeoramiento reciente)
+        if f"{prefix}_pace_roll_mean_5" in df_reg.columns and f"{prefix}_pace_roll_mean_10" in df_reg.columns:
+            df_reg[f"{prefix}_pace_momentum_5"] = (
+                df_reg[f"{prefix}_pace_roll_mean_5"] - df_reg[f"{prefix}_pace_roll_mean_10"]
+            ).fillna(0.0)
+        
+        # Momentum largo plazo = pace_roll_10 - pace_roll_30
+        if f"{prefix}_pace_roll_mean_10" in df_reg.columns and f"{prefix}_pace_roll_mean_30" in df_reg.columns:
+            df_reg[f"{prefix}_pace_momentum_long"] = (
+                df_reg[f"{prefix}_pace_roll_mean_10"] - df_reg[f"{prefix}_pace_roll_mean_30"]
+            ).fillna(0.0)
+    
+    # -------------------------------------------------------
+    # 3) Consistencia dentro de la carrera (intra-race resid std)
+    # NOTA: usamos residuals si existen
+    # -------------------------------------------------------
+    if "target_resid" in df_reg.columns:
+        race_resid_std = df_reg.groupby("raceId", sort=False)["target_resid"].transform("std")
+        df_reg["race_residual_std"] = race_resid_std.fillna(0.0)
+    
+    # -------------------------------------------------------
+    # 4) Cambio respecto a la última carrera (pace delta)
+    # -------------------------------------------------------
+    for key, prefix in [("driverId", "driver"), ("constructorId", "constructor"), ("circuitId", "circuit")]:
+        g = df_reg.groupby(key, sort=False)["target_reg"]
+        df_reg[f"{prefix}_pace_delta_1"] = (
+            g.diff(periods=1)
+        ).fillna(0.0)
+    
+    # -------------------------------------------------------
+    # 5) Z-score personalizado (desviación vs histórico propio)
+    # -------------------------------------------------------
+    for key, prefix in [("driverId", "driver"), ("constructorId", "constructor"), ("circuitId", "circuit")]:
+        g = df_reg.groupby(key, sort=False)["target_reg"]
+        
+        # Media histórica (shifted)
+        mean_hist = (
+            g.apply(lambda s: s.shift(1).expanding().mean())
+            .reset_index(level=0, drop=True)
+            .fillna(global_pace_mean)
+        )
+        
+        # Desv estándar histórica (shifted)
+        std_hist = (
+            g.apply(lambda s: s.shift(1).expanding().std())
+            .reset_index(level=0, drop=True)
+            .fillna(global_pace_std / 2)
+        )
+        
+        # Z-score: (valor - media_hist) / std_hist
+        df_reg[f"{prefix}_pace_zscore"] = (
+            (df_reg["target_reg"] - mean_hist) / std_hist.replace(0, np.nan)
+        ).fillna(0.0).clip(-5, 5)
+
+    # -------------------------------------------------------
+    # 6) Interaction: Experience & Context (NEW)
+    # -------------------------------------------------------
+    if "grid" in df_reg.columns and "circuit_baseline_pace" in df_reg.columns:
+        df_reg["grid_baseline_interaction"] = df_reg["grid"] * (df_reg["circuit_baseline_pace"] / global_pace_mean)
+
+    if "driver_prev_pace_mean" in df_reg.columns and "constructor_prev_pace_mean" in df_reg.columns:
+        df_reg["driver_constructor_pace_gap"] = df_reg["driver_prev_pace_mean"] - df_reg["constructor_prev_pace_mean"]
+
+    # -------------------------------------------------------
+    # 7) Driver & Team Form (Recency-weighted)
+    # -------------------------------------------------------
+    global_mean = global_pace_mean
+    for key, prefix in [("driverId", "driver"), ("constructorId", "constructor")]:
+        g = df_reg.groupby(key, sort=False)["target_reg"]
+        df_reg[f"{prefix}_form_ema"] = (
+            g.apply(lambda s: s.shift(1).ewm(span=5, adjust=False).mean())
+            .reset_index(level=0, drop=True)
+            .fillna(global_mean)
+        )
+
+    # -------------------------------------------------------
+    # 8) Teammate Form (NEW)
+    # -------------------------------------------------------
+    if "constructorId" in df_reg.columns and "driver_form_ema" in df_reg.columns:
+        # Get mean form_ema per race-constructor (usually 2 drivers)
+        team_race_form = df_reg.groupby(["raceId", "constructorId"])["driver_form_ema"].transform("mean")
+        # Teammate form is approx: (sum_form - my_form) / (n-1)
+        # For 2 drivers: teammate_form = 2*mean - my_form
+        df_reg["teammate_form_ema"] = (2.0 * team_race_form - df_reg["driver_form_ema"]).fillna(df_reg["constructor_form_ema"])
+
+    # -------------------------------------------------------
+    # 9) Driver-Circuit Specific Performance (NEW)
+    # -------------------------------------------------------
+    g_dc = df_reg.groupby(["driverId", "circuitId"], sort=False)["target_reg"]
+    df_reg["driver_circuit_prev_pace_mean"] = (
+        g_dc.apply(lambda s: s.shift(1).expanding().mean())
+        .reset_index(level=[0, 1], drop=True)
+        .fillna(df_reg["driver_prev_pace_mean"]) 
+    )
+
+    # -------------------------------------------------------
+    # 10) Qualifying Form (EMA)
+    # -------------------------------------------------------
+    if "quali_gap_pct" in df_reg.columns:
+        for key, prefix in [("driverId", "driver"), ("constructorId", "constructor")]:
+            g_q = df_reg.groupby(key, sort=False)["quali_gap_pct"]
+            df_reg[f"{prefix}_quali_form_ema"] = (
+                g_q.apply(lambda s: s.shift(1).ewm(span=5, adjust=False).mean())
+                .reset_index(level=0, drop=True)
+                .fillna(0.0) # 0.0 means no gap to pole in pct
+            )
+        
+        # Teammate quali form
+        team_race_q_form = df_reg.groupby(["raceId", "constructorId"])["driver_quali_form_ema"].transform("mean")
+        df_reg["teammate_quali_form_ema"] = (2.0 * team_race_q_form - df_reg["driver_quali_form_ema"]).fillna(df_reg["constructor_quali_form_ema"])
+
+    # -------------------------------------------------------
+    # 11) Extreme Tuning: Non-linear Interactions
+    # -------------------------------------------------------
+    # Grid is highly non-linear in its effect on pace
+    df_reg["grid_sqrt"] = np.sqrt(df_reg["grid"].clip(lower=1))
+    df_reg["grid_log"] = np.log1p(df_reg["grid"].clip(lower=0))
+    
+    # Interaction: Form of driver and car together
+    df_reg["driver_constructor_combined_form"] = df_reg["driver_form_ema"] * df_reg["constructor_form_ema"]
+    
+    # Interaction: Grid position weighted by qualitative car/driver potential
+    df_reg["grid_weighted_by_potential"] = df_reg["grid"] * df_reg["driver_prev_pace_mean"]
+    
+    # Interaction: Qualifying signal and form
+    if "quali_gap_pct" in df_reg.columns:
+        df_reg["quali_signal_weighted_form"] = df_reg["quali_gap_pct"] * df_reg["driver_form_ema"]
+        df_reg["quali_grid_form_interaction"] = (df_reg["grid"] * (1.0 + df_reg["quali_gap_pct"])) * df_reg["driver_form_ema"]
+        
+        # 11b) Teammate Quali Differential (Head-to-Head)
+        avg_q_team = df_reg.groupby(["raceId", "constructorId"])["quali_gap_pct"].transform("mean")
+        df_reg["driver_teammate_quali_diff"] = df_reg["quali_gap_pct"] - avg_q_team
+        
+    # 11c) Technical Era: Ground Effect (2022+)
+    df_reg["is_ground_effect"] = (df_reg["year"] >= 2022).astype(float)
+    
+    # 11d) Rolling Teammate Pace Gap (Recent reliability/speed proxy)
+    if "driver_constructor_pace_gap" in df_reg.columns:
+        df_reg["teammate_pace_gap_roll_mean_5"] = (
+            df_reg.groupby(["driverId", "constructorId"], sort=False)["driver_constructor_pace_gap"]
+            .transform(lambda s: _rolling_mean_shifted(s, 5))
+            .fillna(0.0)
+        )
+
+    # -------------------------------------------------------
+    # 12) Experience/Reliability proxy (NEW)
+    # -------------------------------------------------------
+    df_reg["constructor_reliability_proxy"] = np.log1p(df_reg["constructor_prev_pace_count"])
+
+    return df_reg
+
+
+# --------------------
 # Qualifying features (pre-carrera)
 # --------------------
 def _build_qualy_features(qualifying_raw: pd.DataFrame) -> pd.DataFrame:
@@ -472,6 +688,10 @@ def build_model_inputs_from_raw(
     df_reg["driver_circuit_prev_count"] = df_reg.groupby(["driverId", "circuitId"], sort=False).cumcount().astype(int)
     df_reg["driver_circuit_log"] = np.log1p(df_reg["driver_circuit_prev_count"])
 
+    # Longevidad driver-constructor (NEW)
+    df_reg["driver_constructor_longevity"] = df_reg.groupby(["driverId", "constructorId"], sort=False).cumcount().astype(int)
+    df_reg["driver_constructor_longevity_log"] = np.log1p(df_reg["driver_constructor_longevity"])
+
     global_mean = float(df_reg["target_reg"].mean())
 
     # --------------------
@@ -607,6 +827,9 @@ def build_model_inputs_from_raw(
 
     # históricos pace + históricos resid
     df_reg = _add_historical_features_regression(df_reg)
+    
+    # NUEVA: features avanzadas de volatilidad, momentum y consistencia
+    df_reg = _add_advanced_performance_features(df_reg)
 
     # --------------------
     # IMPORTANTÍSIMO:

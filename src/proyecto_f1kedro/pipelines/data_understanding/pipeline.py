@@ -1,5 +1,11 @@
 from kedro.pipeline import Pipeline, node
-from .nodes import load_dataset, summary_statistics, check_missing_values, plot_distributions
+from .nodes import (
+    load_dataset, 
+    summary_statistics, 
+    check_missing_values, 
+    plot_distributions,
+    analyze_correlations
+)
 
 def create_pipeline(**kwargs) -> Pipeline:
     return Pipeline(
@@ -27,6 +33,12 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs="races_loaded",
                 outputs=None,
                 name="plot_races"
+            ),
+            node(
+                func=analyze_correlations,
+                inputs="races_loaded",
+                outputs="races_correlation",
+                name="correlation_races"
             )
         ]
     )
