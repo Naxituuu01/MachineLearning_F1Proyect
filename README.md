@@ -74,6 +74,7 @@ Los datasets se integran mediante claves relacionales (`raceId`, `driverId`, `co
 
 ## 🧱 Estructura del Proyecto Kedro
 
+```text
 proyecto-ml-f1/
 ├── conf/
 │   ├── base/
