@@ -102,7 +102,7 @@ proyecto-ml-f1/
 ├── README.md
 ├── requirements.txt
 └── .gitignore
-
+```
 
 ## 🐍 Crear entorno virtual
 
@@ -113,7 +113,6 @@ python -m venv venv
 source venv/bin/activate  #En Linux
 venv\Scripts\activate  #En Windows
 ```
-
 Una vez activado, puedes instalar las dependencias como se indica más abajo.
 
 ---
