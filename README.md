@@ -12,7 +12,6 @@
 ---
 
 ## 🎥 Demo / Video del Proyecto (inserta aquí tu enlace)
-✅ **Reemplaza este link** por tu video en Google Drive:
 
 🔗 **Video (Google Drive):** https://drive.google.com/file/d/17cKey2yHUMJ5UUbzrboDu3WrPq8mzXsH/view?usp=sharing
 
