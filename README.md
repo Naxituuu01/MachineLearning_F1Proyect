@@ -14,9 +14,7 @@
 ## 🎥 Demo / Video del Proyecto (inserta aquí tu enlace)
 ✅ **Reemplaza este link** por tu video en Google Drive:
 
-🔗 **Video (Google Drive):** [PON_AQUI_TU_ENLACE](https://drive.google.com/)
-
-> Sugerencia: configura el enlace como “**Cualquier persona con el vínculo puede ver**”.
+🔗 **Video (Google Drive):** https://drive.google.com/file/d/17cKey2yHUMJ5UUbzrboDu3WrPq8mzXsH/view?usp=sharing
 
 ---
 
