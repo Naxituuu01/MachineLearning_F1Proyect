@@ -204,7 +204,7 @@ dvc status
 - Split temporal defendible:
 - Train: year <= 2018
 - Test: year > 2018 (2019–2024)
-- 
+  
 ### ✅ Clasificación (points > 0)
 - CV estratificado + tuning (GridSearchCV) + selección por F1-macro
 - Manejo de desbalance con SMOTE dentro del pipeline por fold
