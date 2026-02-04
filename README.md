@@ -1,175 +1,117 @@
-Repositorio que almacenara todo el proyecto referido al dataset de Kaggle llamado "Formula 1 World Championship (1950 - 2024)"
-# 🏎️ Proyecto de Machine Learning – Fórmula 1  
-## 📊 Kedro + CRISP-DM (Business Understanding · Data Understanding · Data Preparation)
+# 🏎️ Proyecto de Machine Learning – Fórmula 1 (1950–2024)
+## 🧠 Kedro + CRISP-DM + MLOps (DVC · Docker · Airflow)
+
+> Repositorio que almacena el proyecto basado en el dataset de Kaggle: **Formula 1 World Championship (1950–2024)**.
 
 [![Powered by Kedro](https://img.shields.io/badge/powered_by-kedro-ffc900?logo=kedro)](https://kedro.org)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python)](https://www.python.org/)
-[![DVC Connected](https://img.shields.io/badge/data_versioning-dvc-9cf?logo=data-version-control)](https://dvc.org)
-[![Interactive Results](https://img.shields.io/badge/viz-plotly-blue?logo=plotly)](https://plotly.com)
+[![DVC](https://img.shields.io/badge/data_versioning-dvc-9cf?logo=data-version-control)](https://dvc.org)
+[![Docker](https://img.shields.io/badge/containerized-docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Airflow](https://img.shields.io/badge/orchestrated-airflow-017CEE?logo=apacheairflow&logoColor=white)](https://airflow.apache.org/)
 
-## 📌 Descripción General del Proyecto
+---
 
-Este proyecto implementa un **pipeline profesional de Machine Learning** sobre datos históricos del **Campeonato Mundial de Fórmula 1 (1950–2020+)**, utilizando el framework **Kedro** y siguiendo rigurosamente la metodología **CRISP-DM**.
+## 🎥 Demo / Video del Proyecto (inserta aquí tu enlace)
+✅ **Reemplaza este link** por tu video en Google Drive:
 
-El objetivo principal es **analizar el rendimiento de pilotos y constructores** y construir **modelos predictivos baseline** que permitan:
+🔗 **Video (Google Drive):** [PON_AQUI_TU_ENLACE](https://drive.google.com/)
 
-- 🥇 Predecir si un piloto finalizará en el **podio** (clasificación).
-- 📈 Estimar la **posición final** de un piloto en una carrera (regresión).
+> Sugerencia: configura el enlace como “**Cualquier persona con el vínculo puede ver**”.
 
-El proyecto está desarrollado con **buenas prácticas de ingeniería de datos**, código reproducible y documentación clara, orientado a un contexto **académico y profesional**.
+---
+
+## ✨ Resumen Ejecutivo
+Este proyecto implementa un **pipeline profesional de Machine Learning** sobre datos históricos de Fórmula 1, usando **Kedro** como framework y la metodología **CRISP-DM** para estructurar el trabajo (desde el entendimiento del negocio hasta evaluación de modelos).
+
+El foco es construir modelos **sin leakage** (solo información **pre-carrera**) para predecir desempeño competitivo:
+
+- ✅ **Clasificación**: predecir si un piloto obtendrá **puntos** → `target_cls = (points > 0)`.
+- ✅ **Regresión**: predecir el **pace (ms/lap)** para finishers (status “Finished”) → `target_reg = pace`.
+- ✅ **Clustering (no supervisado)**: descubrir **arquetipos latentes** (KMeans) y generar una etiqueta de cluster reutilizable como feature (`cluster_kmeans_k4`).
+
+El proyecto incluye prácticas MLOps: **DVC** para versionado, **Docker** para ejecución reproducible y **Airflow** para orquestación.
+
+---
+
+## 🏆 Resultados (KPIs)
+| Tarea | Métrica | Resultado final | Modelo / enfoque |
+|---|---:|---:|---|
+| 🟦 **Clasificación (points > 0)** | **F1-macro** | **0.9139** | ⚡ HistGradientBoosting (tuned) + CV + SMOTE (por fold) |
+| 🟩 **Regresión (PACE ms/lap)** | **R² (test 2019–2024)** | **0.8127** | 🛡️ Ensemble lineal + árbol (robusto OOT) |
+| 🟪 **Clustering (KMeans)** | Silhouette (K=4) | **0.097** | 🧩 KMeans + PCA + perfilado por medianas |
+
+> Nota: El clustering prioriza **interpretabilidad y perfilado**, no separación perfecta (alta dimensionalidad + dinámica temporal).
 
 ---
 
 ## 🎯 Objetivos del Proyecto
+### Objetivo general
+Desarrollar un proyecto de Machine Learning **reproducible y estructurado** con Kedro, aplicando CRISP-DM sobre datos históricos de Fórmula 1.
 
-### Objetivo General
-Desarrollar un proyecto de Machine Learning estructurado con Kedro que permita analizar datos históricos de Fórmula 1 y construir modelos predictivos básicos, alineados con la metodología CRISP-DM.
-
-### Objetivos Específicos
-- Integrar múltiples datasets relacionales del dominio Fórmula 1.
-- Realizar un Análisis Exploratorio de Datos (EDA) exhaustivo.
-- Limpiar y preparar los datos aplicando criterios técnicos justificados.
-- Construir *features* explicativas basadas en experiencia y rendimiento.
-- Definir y defender variables objetivo para clasificación y regresión.
-- Entrenar y evaluar modelos baseline interpretables.
-- Documentar todo el proceso siguiendo estándares de la industria.
+### Objetivos específicos
+- Integrar datasets relacionales del dominio F1.
+- Ejecutar EDA + validación de calidad de datos.
+- Preparar datos y features con justificación técnica.
+- Definir targets defendibles (clasificación/regresión).
+- Entrenar ≥5 modelos por pipeline y comparar métricas.
+- Reportar resultados con artefactos (tablas, gráficos, métricas).
+- Orquestar ejecución con Airflow y reproducibilidad con DVC + Docker.
 
 ---
 
-## 🧠 Metodología Utilizada – CRISP-DM
-
-El proyecto implementa las **primeras tres fases de CRISP-DM**, exigidas por la evaluación:
-
-| Fase CRISP-DM | Entregable |
-|---------------|----------|
+## 🧭 Metodología — CRISP-DM (entregables)
+| Fase | Notebook |
+|---|---|
 | Business Understanding | `01_business_understanding.ipynb` |
 | Data Understanding | `02_data_understanding.ipynb` |
 | Data Preparation | `03_data_preparation.ipynb` |
-
-Las fases de *Modeling* y *Evaluation* se abordan a nivel de **modelos baseline**, mientras que *Deployment* queda fuera del alcance de esta evaluación.
-
----
-
-## 📦 Dataset Utilizado
-
-Los datos provienen del dataset público:
-
-**Formula 1 World Championship (1950–2020)**  
-- Autor: Rohan Rao  
-- Plataforma: Kaggle  
-- Fuente original: Ergast Motor Racing Database  
-
-🔗 https://www.kaggle.com/datasets/rohanrao/formula-1-world-championship-1950-2020
-
-### Datasets principales utilizados
-- `races.csv` – Información de carreras (año, circuito, fecha)
-- `drivers.csv` – Información de pilotos
-- `constructors.csv` – Información de equipos
-- `circuits.csv` – Información de circuitos
-- `results.csv` – Resultados por piloto y carrera
-
-Los datasets se integran mediante claves relacionales (`raceId`, `driverId`, `constructorId`, `circuitId`), conformando un **modelo relacional tipo estrella**.
+| Modeling & Evaluation (reporting premium) | `04_classification_results.ipynb`, `05_regression_results.ipynb` |
+| Unsupervised / Insights | `06_unsupervised_clustering.ipynb` |
 
 ---
 
-## 🧱 Estructura del Proyecto Kedro
-
+## 🗂️ Estructura del proyecto
 ```text
-proyecto-ml-f1/
+proyecto_f1kedro/
+├── airflow/                   # Orquestación
+│   └── dags/
+│       └── f1_kedro_dag.py
+│
 ├── conf/
 │   ├── base/
 │   │   ├── catalog.yml
 │   │   ├── parameters.yml
-│   │   └── logging.yml
+│   │   └── parameters_modeling.yml
 │   └── local/
-│       └── credentials.yml   # NO subir a Git
-├── data/
-│   ├── 01_raw/               # Datos originales
-│   ├── 03_primary/           # Datos limpios y listos para MLς ML
+│       └── credentials.yml
+│
+├── data/                      # Capas (versionadas con DVC)
+│   ├── 01_raw/
+│   ├── 02_intermediate/
+│   ├── 05_model_input/
+│   ├── 06_models/
+│   └── 08_reporting/
+│
 ├── notebooks/
 │   ├── 01_business_understanding.ipynb
 │   ├── 02_data_understanding.ipynb
-│   └── 03_data_preparation.ipynb
-├── src/
-│   └── proyecto_ml/
-│       ├── pipelines/
-│       │   ├── data_engineering/
-│       │   └── data_science/
-│       └── pipeline_registry.py
-├── README.md
-├── requirements.txt
-└── .gitignore
-├── README.md
-├── requirements.txt
-└── .gitignore
-```
-
-## 🐍 Crear entorno virtual
-
-Antes de comenzar, crea un entorno virtual llamado `venv` y actívalo:
-
-```bash
-python -m venv venv
-source venv/bin/activate  #En Linux
-venv\Scripts\activate  #En Windows
-```
-Una vez activado, puedes instalar las dependencias como se indica más abajo.
-
----
-
-## ▶️ Cómo ejecutar tu pipeline de Kedro
-
-Puedes ejecutar tu proyecto Kedro con:
-
-```
-kedro run
-```
-
----
-
-## 🏆 Resultados de Alto Rendimiento
-Este proyecto ha superado todos los KPI técnicos establecidos, demostrando estabilidad y poder predictivo en un entorno de **Fórmula 1 real (1950–2024)**.
-
-| Desafío | Métrica Objetivo | **Resultado Final** | Modelo Ganador |
-| :--- | :--- | :--- | :--- |
-| **Pace Prediction** (Regression) | R² > 0.80 | **0.8127** | 🛡️ *Robust Titan Ensemble* |
-| **Podium Prediction** (Classification) | F1-Macro > 0.87 | **0.9139** | ⚡ *HistGradient (Optimized)* |
-| **Race Segmentation** (Clustering) | Explanatory | **K=4 Clusters** | 🧩 *K-Means + PCA* |
-
----
-
-## 🧭 Arquitectura
-
-### 1. 🚀 Ingeniería de Modelos
-- **Ensemble Híbrido**: El modelo de regresión combina la estabilidad de Ridge con la potencia de Random Forest, logrando un R² de 0.81 en datos *Out-of-Time* (2019-2024).
-- **Pragmatic Grid Search**: El entrenamiento de clasificación se optimizó de ~20min a **~1.5min** manteniendo un F1 de 0.91, ideal para ciclos de CI/CD.
-- **Leakage Prevention**: Todas las variables son estrictamente pre-carrera (Standing, Grid, History).
-
-### 2. 🛠️ Infraestructura de Producción
-- **DVC (Data Version Control)**: El archivo `dvc.yaml` rastrea 13 artefactos de reporte y los modelos, asegurando reproducibilidad 1:1.
-- **Airflow + Docker**: Orquestación de grado industrial. Un DAG dedicado dispara el pipeline de entrenamiento consumiendo recursos aislados.
-- **Notebooks Interactivos**: Los reportes (04, 05, 06) incluyen gráficos de **Plotly** y conclusiones de impacto de negocio.
-
----
-
-## ▶️ Guía de Ejecución
-
-### 🐳 Despliegue con Docker
-Para levantar el ecosistema completo (Airflow + Jupyter + Postgres + Kedro Viz):
-```bash
-docker-compose up -d
-```
-- **Airflow**: http://localhost:8080 (User/Pass: admin/admin)
-- **Jupyter**: http://localhost:8888 (Notebooks Premium cargados)
-- **Kedro Viz**: http://localhost:4141
-
-### 📦 Reproducibilidad DVC
-Para verificar y sincronizar el estado final:
-```bash
-dvc repro
-```
-
----
-
-## 🧠 Conclusiones del Proyecto
-El proyecto demuestra que es posible predecir el ritmo de carrera y la probabilidad de puntos con una confianza superior al **90%** (F1) y **80%** (R²), convirtiendo datos históricos en una ventaja estratégica real para la toma de decisiones en el pit-wall.
+│   ├── 03_data_preparation.ipynb
+│   ├── 04_classification_results.ipynb
+│   ├── 05_regression_results.ipynb
+│   └── 06_unsupervised_clustering.ipynb
+│
+├── src/proyecto_f1kedro/
+│   ├── pipelines/
+│   │   ├── data_engineering/
+│   │   ├── model_input/
+│   │   ├── classification/
+│   │   ├── regression/
+│   │   └── clustering/
+│   ├── pipeline_registry.py
+│   └── settings.py
+│
+├── dvc.yaml
+├── docker-compose.yml
+├── Dockerfile
+├── pyproject.toml
+└── README.md
