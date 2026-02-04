@@ -311,7 +311,7 @@ def _get_candidates(random_state: int, fast_mode: bool):
             ("ensemble_lin_tree",
              VotingRegressor(estimators=[
                  ("en", ElasticNet(alpha=0.005, l1_ratio=0.1, max_iter=1000000)),
-                 ("br", BayesianRidge()), 
+                 ("rd", Ridge(alpha=1.0)), 
                  ("rf", RandomForestRegressor(n_estimators=200, max_depth=12, min_samples_leaf=5, n_jobs=-1, random_state=random_state))
              ], weights=[0.40, 0.40, 0.20]), # Robust Ensemble: Linear Stability + Bagging (Low Variance)
              {},
@@ -345,7 +345,7 @@ def _get_candidates(random_state: int, fast_mode: bool):
         ("ensemble_lin_tree",
          VotingRegressor(estimators=[
              ("en", ElasticNet(max_iter=1000000, selection="cyclic")),
-             ("br", BayesianRidge()), 
+             ("rd", Ridge(alpha=1.0)), 
              ("rf", RandomForestRegressor(n_jobs=-1, random_state=random_state))
          ], weights=[0.40, 0.40, 0.20]),
          {
@@ -1380,4 +1380,3 @@ def train_and_evaluate_regression(model_input_regression: pd.DataFrame, modeling
     )
 
     return results, summary, fig, best_estimator, pred_df, fi_df
-
