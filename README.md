@@ -209,7 +209,7 @@ dvc status
 - CV estratificado + tuning (GridSearchCV) + selección por F1-macro
 - Manejo de desbalance con SMOTE dentro del pipeline por fold
 
-###✅ Regresión (PACE ms/lap)
+### ✅ Regresión (PACE ms/lap)
 - Target continuo robusto y comparable entre carreras
 - Métricas reportadas en pace y reconstrucción aproximada a ms
 - Modelo final con excelente generalización OOT
