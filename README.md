@@ -73,26 +73,27 @@ Desarrollar un proyecto de Machine Learning **reproducible y estructurado** con 
 ## 🗂️ Estructura del proyecto
 ```text
 proyecto_f1kedro/
-├── airflow/                   # Orquestación
+├── airflow/                   # Orquestación de grado industrial
 │   └── dags/
-│       └── f1_kedro_dag.py
+│       └── f1_kedro_dag.py   # Automatización del entrenamiento en Docker
 │
-├── conf/
+├── conf/                      # El "Centro de Mando" (Configuración)
 │   ├── base/
-│   │   ├── catalog.yml
-│   │   ├── parameters.yml
-│   │   └── parameters_modeling.yml
+│   │   ├── catalog.yml       # Definición de datasets (In/Out)
+│   │   └── parameters.yml    # Parámetros globales y de pipelines
 │   └── local/
-│       └── credentials.yml
+│       └── credentials.yml   # Credenciales de BD (Postgres)
 │
-├── data/                      # Capas (versionadas con DVC)
-│   ├── 01_raw/
-│   ├── 02_intermediate/
-│   ├── 05_model_input/
-│   ├── 06_models/
-│   └── 08_reporting/
+├── data/                      # Capas de persistencia (Versionado por DVC)
+│   ├── 01_raw/               # Datasets originales (Ergast Kaggle)
+│   ├── 02_intermediate/      # Limpieza y tipado inicial
+│   ├── 03_primary/           # Tablas maestras unificadas
+│   ├── 04_feature/           # Features de ingeniería (Stating, Gaps, etc)
+│   ├── 05_model_input/       # Tablas listas para modelado (Class/Reg)
+│   ├── 06_models/            # Serialización de modelos (.pkl)
+│   └── 08_reporting/         # Métricas, matrices y plots de auditoría
 │
-├── notebooks/
+├── notebooks/                 # Reportes Premium e investigación
 │   ├── 01_business_understanding.ipynb
 │   ├── 02_data_understanding.ipynb
 │   ├── 03_data_preparation.ipynb
@@ -100,18 +101,128 @@ proyecto_f1kedro/
 │   ├── 05_regression_results.ipynb
 │   └── 06_unsupervised_clustering.ipynb
 │
-├── src/proyecto_f1kedro/
+├── src/proyecto_f1kedro/      # El "Motor" (Lógica de Ingeniería)
 │   ├── pipelines/
-│   │   ├── data_engineering/
-│   │   ├── model_input/
-│   │   ├── classification/
-│   │   ├── regression/
-│   │   └── clustering/
-│   ├── pipeline_registry.py
-│   └── settings.py
+│   │   ├── data_engineering/   # Limpieza profunda
+│   │   ├── data_understanding/ # EDA programático
+│   │   ├── data_preparation/   # Creación de Master Tables
+│   │   ├── model_input/        # Feature Engineering avanzado
+│   │   ├── classification/     # Predicción de Podios
+│   │   ├── regression/         # Predicción de Pace (Lap Time)
+│   │   ├── clustering/         # Segmentación de pilotos/constructores
+│   │   └── data_science/       # Pipelines de entrenamiento/validación
+│   ├── pipeline_registry.py    # Punto de unión de flujos
+│   └── settings.py             # Configuración de hooks y core
 │
-├── dvc.yaml
-├── docker-compose.yml
-├── Dockerfile
-├── pyproject.toml
-└── README.md
+├── docker-compose.yml         # Containerización completa
+├── Dockerfile                 # Imagen base Kedro/Airflow
+├── .dockerignore              # Exclusiones de construcción Docker
+├── .env                       # Variables de entorno y secretos
+├── dvc.yaml                   # MLOps: Trazabilidad de datos
+├── dvc.lock                   # Estado actual de versionado DVC
+├── pyproject.toml             # Configuración central del proyecto
+├── requirements.txt           # Dependencias core de producción
+├── requirements-dev.txt       # Herramientas de desarrollo y testing
+├── requirements-airflow.txt   # Dependencias específicas de orquestación
+├── .gitignore                 # Control de versiones git
+└── README.md                  # Documentación principal
+```
+
+## ⚙️ Requisitos
+- Python 3.10+
+- Docker + Docker Compose
+- DVC configurado si se usa remote
+
+## 🚀 Quickstart (local)
+### Crear y activar entorno virtual
+
+```bash
+python -m venv venv
+# Linux/Mac
+source venv/bin/activate
+# Windows
+venv\Scripts\activate
+```
+## Instalar dependencias
+```bash
+pip install -U pip
+pip install -r requirements.txt
+```
+
+## Ejecutar pipelines Kedro
+```bash
+kedro run
+```
+
+## Ejecutar pipelines por separado:
+```bash
+kedro run --pipeline clustering
+kedro run --pipeline classification
+kedro run --pipeline regression
+```
+
+## 🧪 Artefactos generados (outputs)
+### 📌 Modelos
+
+- data/06_models/best_model_classification.pkl
+- data/06_models/best_model_regression.pkl
+
+### 📌 Reporting / auditoría técnica
+
+- data/08_reporting/classification_metrics_summary.json
+- data/08_reporting/regression_metrics_summary.json
+- Tablas comparativas (CSV) + gráficos (png / html según pipeline)
+- Predicciones test y feature importances (cuando aplique)
+
+## 🐳 Ejecución con Docker (ecosistema completo)
+### Levanta Airflow + servicios:
+```bash
+docker-compose up -d
+```
+
+## Accesos:
+
+- Airflow: http://localhost:8080
+ (admin/admin)
+- Kedro Viz: http://localhost:4141
+- Jupyter: http://localhost:8888
+
+## ♻️ Reproducibilidad con DVC
+### Reproducir stages del pipeline:
+```bash
+dvc repro
+```
+Ver estado:
+```bash
+dvc status
+```
+
+## 🧠 Diseño técnico
+
+### ✅ Prevención de leakage
+- Features construidos con shift/rolling/expanding y datos pre-carrera (standings, quali, historia).
+- Split temporal defendible:
+- Train: year <= 2018
+- Test: year > 2018 (2019–2024)
+- 
+### ✅ Clasificación (points > 0)
+- CV estratificado + tuning (GridSearchCV) + selección por F1-macro
+- Manejo de desbalance con SMOTE dentro del pipeline por fold
+
+###✅ Regresión (PACE ms/lap)
+- Target continuo robusto y comparable entre carreras
+- Métricas reportadas en pace y reconstrucción aproximada a ms
+- Modelo final con excelente generalización OOT
+
+### ✅ Clustering (KMeans)
+- Selección de features numéricas sin IDs para clustering real
+- K selection (Elbow + Silhouette) y K=4 por interpretabilidad
+- Perfilado por medianas y variables discriminantes
+
+## 🧾 Conclusión
+
+### Este repositorio demuestra un flujo completo y reproducible para:
+- Clasificación de probabilidad de puntos con desempeño alto (F1-macro ≈ 0.914)
+- Regresión de pace con generalización OOT fuerte (R² ≈ 0.813 en 2019–2024)
+- Clustering interpretativo para segmentación y feature augmentation
+### Todo bajo un enfoque CRISP-DM + Kedro + MLOps, listo para evaluación académica y demostración profesional.
